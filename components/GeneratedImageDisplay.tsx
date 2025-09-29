@@ -12,6 +12,12 @@ const ReuseIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     </svg>
 );
 
+const DownloadIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+    </svg>
+);
+
 
 interface GeneratedImageGridProps {
     srcs: string[];
@@ -23,6 +29,17 @@ interface GeneratedImageGridProps {
 }
 
 export const GeneratedImageGrid: React.FC<GeneratedImageGridProps> = ({ srcs, onReset, onImageClick, onTweak, onUseAsBase, isLoading }) => {
+    
+    const handleDownload = (e: React.MouseEvent, src: string) => {
+        e.stopPropagation();
+        const link = document.createElement('a');
+        link.href = src;
+        link.download = `generated-scene-${Date.now()}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     return (
         <div className="flex flex-col gap-4">
              <div className="grid grid-cols-2 gap-4 aspect-video">
@@ -33,7 +50,7 @@ export const GeneratedImageGrid: React.FC<GeneratedImageGridProps> = ({ srcs, on
                         onClick={() => onImageClick(src)}
                     >
                         <img src={src} alt={`Generated product scene ${index + 1}`} className="w-full h-full object-contain rounded-lg" />
-                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-60 transition-opacity rounded-lg flex items-center justify-center gap-2">
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-60 transition-opacity rounded-lg flex items-center justify-center gap-2 flex-wrap p-2">
                              <button
                                 onClick={(e) => { e.stopPropagation(); onUseAsBase(src); }}
                                 className="bg-white/80 backdrop-blur-sm hover:bg-white text-brand-dark font-bold py-2 px-3 rounded-lg transition duration-300 opacity-0 group-hover:opacity-100 flex items-center gap-2 text-sm"
@@ -50,6 +67,13 @@ export const GeneratedImageGrid: React.FC<GeneratedImageGridProps> = ({ srcs, on
                                 className="bg-white/80 backdrop-blur-sm hover:bg-white text-brand-dark font-bold py-2 px-3 rounded-lg transition duration-300 opacity-0 group-hover:opacity-100 disabled:opacity-50 flex items-center gap-2 text-sm"
                             >
                                 <TweakIcon className="w-4 h-4" /> Tweak
+                            </button>
+                            <button
+                                onClick={(e) => handleDownload(e, src)}
+                                className="bg-white/80 backdrop-blur-sm hover:bg-white text-brand-dark font-bold py-2 px-3 rounded-lg transition duration-300 opacity-0 group-hover:opacity-100 flex items-center gap-2 text-sm"
+                                aria-label="Download image"
+                            >
+                                <DownloadIcon className="w-4 h-4" /> Download
                             </button>
                         </div>
                     </div>

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { ImageUploader } from './components/ImageUploader';
 import { SelectInput } from './components/SelectInput';
@@ -41,7 +41,18 @@ const App: React.FC = () => {
     const [isStyleModalOpen, setIsStyleModalOpen] = useState<boolean>(false);
     const [selectedStyleCategory, setSelectedStyleCategory] = useState<string | null>(null);
 
+    const isGeneratingRef = useRef(false);
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+
+    const handleApiError = (err: unknown) => {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+        if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
+            setError("Quota exceeded. This may be due to reaching the free tier's daily limit or a billing issue with your API key. Please check your Google AI Platform account to ensure your billing is active.");
+        } else {
+            setError(errorMessage);
+        }
+        console.error(err);
+    };
 
     const handleBaseImageUpload = (files: File[]) => {
         setError(null);
@@ -86,6 +97,9 @@ const App: React.FC = () => {
 
 
     const handleGeneratePrompts = useCallback(async () => {
+        if (isGeneratingRef.current) return;
+
+        isGeneratingRef.current = true;
         setIsLoading(true);
         setLoadingMessage('Generating creative concept...');
         setError(null);
@@ -102,29 +116,32 @@ const App: React.FC = () => {
             });
             setDetailedPrompts(prompts);
         } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while generating prompts.';
-            setError(errorMessage);
-            console.error(err);
+            handleApiError(err);
         } finally {
             setIsLoading(false);
+            isGeneratingRef.current = false;
         }
     }, [ai, sceneDescription, baseImage, referenceImages, lighting, aspectRatio, cameraPerspective, numberOfImages]);
     
     const handleGenerateImages = useCallback(async () => {
+        if (isGeneratingRef.current) return;
+        
         if (!detailedPrompts) {
             setError('Please generate a creative concept first.');
             return;
         }
 
+        isGeneratingRef.current = true;
         setIsLoading(true);
         setError(null);
         setGeneratedImages([]);
 
         try {
             const imageUrls: string[] = [];
+            const variations = detailedPrompts.variations;
             
-            for (const [index, variation] of detailedPrompts.variations.entries()) {
-                setLoadingMessage(`Generating image ${index + 1} of ${detailedPrompts.variations.length}...`);
+            for (const [index, variation] of variations.entries()) {
+                setLoadingMessage(`Generating image ${index + 1} of ${variations.length}...`);
                 
                 const fullPromptForVariation = `${detailedPrompts.creativeConcept}. ${variation}`;
                 let newImageBase64: string;
@@ -139,26 +156,29 @@ const App: React.FC = () => {
                 const imageUrl = `data:image/png;base64,${newImageBase64}`;
                 imageUrls.push(imageUrl);
                 setGeneratedImages(prev => [...prev, imageUrl]);
+                
+                // Add a delay between API calls to avoid hitting rate limits
+                if (index < variations.length - 1) {
+                    setLoadingMessage('Waiting to avoid rate limits...');
+                    await new Promise(resolve => setTimeout(resolve, 2000)); // 2-second delay
+                }
             }
 
             setHistory(prev => [...imageUrls, ...prev].slice(0, 12));
 
         } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during image generation.';
-             if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
-                setError('API quota exceeded. Too many requests sent in a short time. Please wait a minute and try again. If the issue persists, check your API key billing status.');
-            } else {
-                setError(errorMessage);
-            }
-            console.error(err);
+            handleApiError(err);
         } finally {
             setIsLoading(false);
+            isGeneratingRef.current = false;
         }
     }, [ai, baseImage, detailedPrompts, aspectRatio]);
 
     const handleTweakImage = useCallback(async (indexToTweak: number) => {
+        if (isGeneratingRef.current) return;
         if (!detailedPrompts) return;
 
+        isGeneratingRef.current = true;
         setIsLoading(true);
         setLoadingMessage(`Tweaking image ${indexToTweak + 1}...`);
         setError(null);
@@ -185,10 +205,10 @@ const App: React.FC = () => {
             // Not adding tweaked images to history to avoid clutter
 
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'An unknown error occurred while tweaking the image.');
-            console.error(err);
+            handleApiError(err);
         } finally {
             setIsLoading(false);
+            isGeneratingRef.current = false;
         }
     }, [ai, baseImage, detailedPrompts, aspectRatio]);
 
@@ -215,7 +235,6 @@ const App: React.FC = () => {
         });
         handleCloseStyleModal();
     };
-
 
     const handleOpenLightbox = (src: string) => setLightboxImage(src);
     const handleCloseLightbox = () => setLightboxImage(null);
@@ -276,7 +295,7 @@ const App: React.FC = () => {
                      ) : (
                          <div className="flex items-center justify-center aspect-video bg-brand-gray rounded-lg p-8 text-center">
                              <div>
-                                <h2 className="text-2xl font-bold text-brand-text">Your batch of {numberOfImages} {parseInt(numberOfImages, 10) > 1 ? 'images' : 'image'} will appear here</h2>
+                                <h2 className="text-2xl font-bold text-brand-text">Your batch of 1-4 images will appear here</h2>
                                 <p className="text-brand-text-secondary mt-2">Describe a scene or upload an image to get started.</p>
                              </div>
                          </div>
@@ -295,7 +314,9 @@ const App: React.FC = () => {
                     <SelectInput label="Camera Perspective" options={CAMERA_PERSPECTIVE_OPTIONS} value={cameraPerspective} onChange={(e) => setCameraPerspective(e.target.value)} />
                     <SelectInput label="Number of Images" options={NUMBER_OF_IMAGES_OPTIONS} value={numberOfImages} onChange={handleNumberOfImagesChange} />
                     <TextAreaInput placeholder="Describe the image you want to create..." value={sceneDescription} onChange={(e) => setSceneDescription(e.target.value)} />
-                    <StyleSelector onCategoryClick={handleCategoryClick} />
+                    <StyleSelector 
+                        onCategoryClick={handleCategoryClick} 
+                    />
 
                     <div className="border-t border-brand-light-gray my-2"></div>
 

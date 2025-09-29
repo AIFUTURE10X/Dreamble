@@ -19,11 +19,27 @@ const ReuseIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     </svg>
 );
 
+const DownloadIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+    </svg>
+);
+
 
 export const History: React.FC<HistoryProps> = ({ images, onImageClick, onDelete, onUseAsBase }) => {
     if (images.length === 0) {
         return null; // Don't render the section if there's no history
     }
+
+    const handleDownload = (e: React.MouseEvent, src: string) => {
+        e.stopPropagation();
+        const link = document.createElement('a');
+        link.href = src;
+        link.download = `history-image-${Date.now()}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     return (
         <section className="max-w-7xl mx-auto mt-12 px-4 sm:px-0">
@@ -49,6 +65,13 @@ export const History: React.FC<HistoryProps> = ({ images, onImageClick, onDelete
                                 aria-label="Use as base image"
                             >
                                 <ReuseIcon className="w-3.5 h-3.5" /> Use as Base
+                            </button>
+                            <button
+                                onClick={(e) => handleDownload(e, src)}
+                                className="bg-white/80 backdrop-blur-sm hover:bg-white text-brand-dark font-bold py-2 px-3 rounded-lg transition duration-300 opacity-0 group-hover:opacity-100 flex items-center gap-1.5 text-xs"
+                                aria-label="Download image"
+                            >
+                                <DownloadIcon className="w-3.5 h-3.5" /> Download
                             </button>
                              <button
                                 onClick={(e) => { e.stopPropagation(); onDelete(index); }}

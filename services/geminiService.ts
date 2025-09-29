@@ -151,13 +151,12 @@ export const editProductImage = async (
     throw new Error('Image generation failed. No image data was returned.');
 };
 
-const mapAspectRatioForImagen = (aspectRatioString: string): "1:1" | "3:4" | "4:3" | "9:16" | "16:9" => {
-    const ratio = aspectRatioString.split(' ')[0];
+const mapAspectRatioForImagen = (aspectRatio: string): "1:1" | "3:4" | "4:3" | "9:16" | "16:9" => {
     const supportedRatios = ["1:1", "3:4", "4:3", "9:16", "16:9"];
-    if (supportedRatios.includes(ratio)) {
-        return ratio as "1:1" | "3:4" | "4:3" | "9:16" | "16:9";
+    if (supportedRatios.includes(aspectRatio)) {
+        return aspectRatio as "1:1" | "3:4" | "4:3" | "9:16" | "16:9";
     }
-    console.warn(`Unsupported aspect ratio '${ratio}' for text-to-image generation, defaulting to '1:1'.`);
+    console.warn(`Unsupported aspect ratio '${aspectRatio}' for text-to-image generation, defaulting to '1:1'.`);
     return '1:1';
 };
 

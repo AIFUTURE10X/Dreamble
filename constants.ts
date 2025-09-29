@@ -11,15 +11,15 @@ export const LIGHTING_OPTIONS: string[] = [
     "Low-Key"
 ];
 
-export const ASPECT_RATIO_OPTIONS: string[] = [
-    "1:1 (Square)",
-    "4:3 (Standard)",
-    "3:2 (Classic)",
-    "16:9 (Widescreen)",
-    "3:4 (Portrait)",
-    "2:3 (Portrait)",
-    "9:16 (Tall)",
-    "21:9 (Cinemascope)"
+export const ASPECT_RATIO_OPTIONS: { value: string, label: string }[] = [
+    { value: "1:1", label: "1:1 (Square)" },
+    { value: "4:3", label: "4:3 (Standard)" },
+    { value: "3:2", label: "3:2 (Classic)" },
+    { value: "16:9", label: "16:9 (Widescreen)" },
+    { value: "3:4", label: "3:4 (Portrait)" },
+    { value: "2:3", label: "2:3 (Portrait)" },
+    { value: "9:16", label: "9:16 (Tall)" },
+    { value: "21:9", label: "21:9 (Cinemascope)" }
 ];
 
 export const CAMERA_PERSPECTIVE_OPTIONS: string[] = [
@@ -96,3 +96,5 @@ export const NUMBER_OF_IMAGES_OPTIONS: string[] = [
     "3",
     "4"
 ];
+
+export const MAX_HISTORY_SIZE = 12;

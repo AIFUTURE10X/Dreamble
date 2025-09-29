@@ -3,13 +3,13 @@ import { GoogleGenAI } from '@google/genai';
 import { ImageUploader } from './components/ImageUploader';
 import { SelectInput } from './components/SelectInput';
 import { TextAreaInput } from './components/TextAreaInput';
-import { GeneratedImageGrid } from './components/GeneratedImageDisplay';
+import { GeneratedImageGrid } from './components/GeneratedImageGrid';
 import { PromptDisplay } from './components/PromptSelector';
 import { Lightbox } from './components/Lightbox';
 import { History } from './components/History';
 import { StyleSelector } from './components/StyleSelector';
 import { StyleModal } from './components/StyleModal';
-import { LIGHTING_OPTIONS, ASPECT_RATIO_OPTIONS, CAMERA_PERSPECTIVE_OPTIONS, STYLE_TAXONOMY, NUMBER_OF_IMAGES_OPTIONS } from './constants';
+import { LIGHTING_OPTIONS, ASPECT_RATIO_OPTIONS, CAMERA_PERSPECTIVE_OPTIONS, STYLE_TAXONOMY, NUMBER_OF_IMAGES_OPTIONS, MAX_HISTORY_SIZE } from './constants';
 import { resizeImageWithPadding, base64ToFile } from './services/imageService';
 import { generateDetailedPrompts, editProductImage, generateImageFromText } from './services/geminiService';
 import type { ImageFile } from './types';
@@ -19,12 +19,14 @@ interface CreativeConcept {
     variations: string[];
 }
 
+const apiKey = process.env.API_KEY;
+
 const App: React.FC = () => {
     const [baseImage, setBaseImage] = useState<ImageFile | null>(null);
     const [referenceImages, setReferenceImages] = useState<ImageFile[]>([]);
     
     const [lighting, setLighting] = useState<string>(LIGHTING_OPTIONS[0]);
-    const [aspectRatio, setAspectRatio] = useState<string>(ASPECT_RATIO_OPTIONS[0]);
+    const [aspectRatio, setAspectRatio] = useState<string>(ASPECT_RATIO_OPTIONS[0].value);
     const [cameraPerspective, setCameraPerspective] = useState<string>(CAMERA_PERSPECTIVE_OPTIONS[0]);
     const [sceneDescription, setSceneDescription] = useState<string>('');
     const [numberOfImages, setNumberOfImages] = useState<string>(NUMBER_OF_IMAGES_OPTIONS[3]); // Default to '4'
@@ -42,14 +44,43 @@ const App: React.FC = () => {
     const [selectedStyleCategory, setSelectedStyleCategory] = useState<string | null>(null);
 
     const isGeneratingRef = useRef(false);
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+
+    if (!apiKey) {
+        return (
+            <div className="min-h-screen bg-brand-dark flex flex-col items-center justify-center p-4 text-center">
+                <div className="bg-red-900/30 border border-red-700 p-8 rounded-lg max-w-2xl shadow-lg">
+                    <h1 className="text-3xl font-bold text-white mb-4">API Key Not Found</h1>
+                    <p className="text-red-200 text-lg mb-2">
+                        The <code>API_KEY</code> environment variable is not set.
+                    </p>
+                    <p className="text-red-200">
+                        Please ensure you have created an API key via the Google Cloud Console and have set it in your environment to enable this application. Refer to the setup guide for instructions on creating and configuring your key.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    // Use a ref to ensure the ai instance is stable and not re-created on every render
+    const aiRef = useRef(new GoogleGenAI({ apiKey }));
+    const ai = aiRef.current;
 
     const handleApiError = (err: unknown) => {
         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-        if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
-            setError("Quota exceeded. This may be due to reaching the free tier's daily limit or a billing issue with your API key. Please check your Google AI Platform account to ensure your billing is active.");
+        const lowerCaseError = errorMessage.toLowerCase();
+
+        // Check for specific Imagen daily limit error
+        if (lowerCaseError.includes('imagen') && lowerCaseError.includes('free generation')) {
+            setError(
+                "Imagen Daily Limit Reached. You've used up the limited free daily generations for the Imagen model (used for text-only image creation). To continue generating images, you must have a Google Cloud project with billing enabled. Please check your project's billing status in the Google Cloud Console to ensure it is active and linked correctly."
+            );
+        // Check for general quota/rate limit errors
+        } else if (lowerCaseError.includes('429') || lowerCaseError.includes('resource_exhausted') || lowerCaseError.includes('quota')) {
+            setError(
+                "API Quota Exceeded. You have reached the usage limit for the Gemini API. This can happen if you are on the free tier (which has low daily and per-minute limits) or if there is an issue with the billing setup for your Google Cloud project. To resolve this, please visit your Google Cloud Console to verify that billing is enabled and active for your project. This will grant you significantly higher usage limits."
+            );
         } else {
-            setError(errorMessage);
+             setError(`An unexpected error occurred: ${errorMessage}`);
         }
         console.error(err);
     };
@@ -157,14 +188,14 @@ const App: React.FC = () => {
                 imageUrls.push(imageUrl);
                 setGeneratedImages(prev => [...prev, imageUrl]);
                 
-                // Add a delay between API calls to avoid hitting rate limits
+                // Add a very long delay between API calls to avoid hitting rate limits
                 if (index < variations.length - 1) {
-                    setLoadingMessage('Waiting to avoid rate limits...');
-                    await new Promise(resolve => setTimeout(resolve, 2000)); // 2-second delay
+                    setLoadingMessage('Waiting for 10s to avoid rate limits...');
+                    await new Promise(resolve => setTimeout(resolve, 10000)); // 10-second delay
                 }
             }
 
-            setHistory(prev => [...imageUrls, ...prev].slice(0, 12));
+            setHistory(prev => [...imageUrls, ...prev].slice(0, MAX_HISTORY_SIZE));
 
         } catch (err) {
             handleApiError(err);
@@ -309,10 +340,10 @@ const App: React.FC = () => {
                     <div className="border-t border-brand-light-gray my-2"></div>
                     <h2 className="text-xl font-semibold -mb-2 text-brand-text">3. Describe Your Scene & Options</h2>
                     
-                    <SelectInput label="Lighting" options={LIGHTING_OPTIONS} value={lighting} onChange={(e) => setLighting(e.target.value)} />
+                    <SelectInput isSimple={true} label="Lighting" options={LIGHTING_OPTIONS} value={lighting} onChange={(e) => setLighting(e.target.value)} />
                     <SelectInput label="Aspect Ratio" options={ASPECT_RATIO_OPTIONS} value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} />
-                    <SelectInput label="Camera Perspective" options={CAMERA_PERSPECTIVE_OPTIONS} value={cameraPerspective} onChange={(e) => setCameraPerspective(e.target.value)} />
-                    <SelectInput label="Number of Images" options={NUMBER_OF_IMAGES_OPTIONS} value={numberOfImages} onChange={handleNumberOfImagesChange} />
+                    <SelectInput isSimple={true} label="Camera Perspective" options={CAMERA_PERSPECTIVE_OPTIONS} value={cameraPerspective} onChange={(e) => setCameraPerspective(e.target.value)} />
+                    <SelectInput isSimple={true} label="Number of Images" options={NUMBER_OF_IMAGES_OPTIONS} value={numberOfImages} onChange={handleNumberOfImagesChange} />
                     <TextAreaInput placeholder="Describe the image you want to create..." value={sceneDescription} onChange={(e) => setSceneDescription(e.target.value)} />
                     <StyleSelector 
                         onCategoryClick={handleCategoryClick} 

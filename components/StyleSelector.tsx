@@ -1,23 +1,11 @@
 import React from 'react';
+import { STYLE_TAXONOMY } from '../constants';
 
 interface StyleSelectorProps {
     onCategoryClick: (category: string) => void;
 }
 
-const styles = [
-    '📸 Realism',
-    '📸 Photo',
-    '🎨 Drawing',
-    '🖌️ Painting',
-    '💻 Digital Art',
-    '👉 Cel‑Shaded',
-    '🎞️ Animation',
-    '🔮 Fantasy',
-    '🚀 Sci-Fi',
-    '🏛️ Heritage',
-    '🌌 Fusion',
-    '✨ Misc'
-];
+const styles = Object.keys(STYLE_TAXONOMY);
 
 export const StyleSelector: React.FC<StyleSelectorProps> = ({ onCategoryClick }) => {
     return (

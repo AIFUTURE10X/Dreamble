@@ -19,7 +19,7 @@ interface CreativeConcept {
     variations: string[];
 }
 
-const apiKey = process.env.API_KEY;
+const geminiApiKey = process.env.API_KEY;
 
 const App: React.FC = () => {
     const [baseImage, setBaseImage] = useState<ImageFile | null>(null);
@@ -45,24 +45,23 @@ const App: React.FC = () => {
 
     const isGeneratingRef = useRef(false);
 
-    if (!apiKey) {
+    if (!geminiApiKey) {
         return (
             <div className="min-h-screen bg-brand-dark flex flex-col items-center justify-center p-4 text-center">
                 <div className="bg-red-900/30 border border-red-700 p-8 rounded-lg max-w-2xl shadow-lg">
-                    <h1 className="text-3xl font-bold text-white mb-4">API Key Not Found</h1>
+                    <h1 className="text-3xl font-bold text-white mb-4">Gemini API Key Not Found</h1>
                     <p className="text-red-200 text-lg mb-2">
                         The <code>API_KEY</code> environment variable is not set.
                     </p>
                     <p className="text-red-200">
-                        Please ensure you have created an API key via the Google Cloud Console and have set it in your environment to enable this application. Refer to the setup guide for instructions on creating and configuring your key.
+                        Please ensure you have created a Gemini API key via the Google Cloud Console and have set it in your environment to enable this application.
                     </p>
                 </div>
             </div>
         );
     }
-
-    // Use a ref to ensure the ai instance is stable and not re-created on every render
-    const aiRef = useRef(new GoogleGenAI({ apiKey }));
+    
+    const aiRef = useRef(new GoogleGenAI({ apiKey: geminiApiKey }));
     const ai = aiRef.current;
 
     const handleApiError = (err: unknown) => {
@@ -74,7 +73,7 @@ const App: React.FC = () => {
                 <div className="bg-red-900/30 border border-red-700 p-4 rounded-lg text-left">
                     <h3 className="font-bold text-lg text-white mb-2">API Quota Exceeded: Troubleshooting Guide</h3>
                     <p className="text-red-200 mb-3">
-                        You've reached the usage limit for the Gemini API. This is almost always due to a configuration issue in your Google Cloud account. Please follow these steps to resolve it:
+                        You've reached the usage limit for the API. This is almost always due to a configuration issue in your Google Cloud account. Please follow these steps to resolve it:
                     </p>
                     <ol className="list-decimal list-inside space-y-2 text-red-200">
                         <li>
@@ -87,7 +86,7 @@ const App: React.FC = () => {
                                     </a>{' '}
                                     page.
                                 </li>
-                                <li>Find your project (e.g., "AI Product Scene Creator") and confirm that the "Billing account" column shows an active account, not "Billing is disabled".</li>
+                                <li>Find your project and confirm that the "Billing account" column shows an active account, not "Billing is disabled".</li>
                                 <li>If disabled, use the (⋮) menu to "Change billing" and link your active billing account.</li>
                             </ul>
                         </li>
@@ -222,10 +221,9 @@ const App: React.FC = () => {
                 imageUrls.push(imageUrl);
                 setGeneratedImages(prev => [...prev, imageUrl]);
                 
-                // Add a very long delay between API calls to avoid hitting rate limits
                 if (index < variations.length - 1) {
                     setLoadingMessage('Waiting for 10s to avoid rate limits...');
-                    await new Promise(resolve => setTimeout(resolve, 10000)); // 10-second delay
+                    await new Promise(resolve => setTimeout(resolve, 10000));
                 }
             }
 
@@ -259,7 +257,7 @@ const App: React.FC = () => {
             } else {
                  newImageBase64 = await generateImageFromText(ai, fullPromptForTweak, aspectRatio);
             }
-
+            
             const imageUrl = `data:image/png;base64,${newImageBase64}`;
 
             setGeneratedImages(prev => {
@@ -267,7 +265,6 @@ const App: React.FC = () => {
                 newImages[indexToTweak] = imageUrl;
                 return newImages;
             });
-            // Not adding tweaked images to history to avoid clutter
 
         } catch (err) {
             handleApiError(err);
@@ -321,8 +318,7 @@ const App: React.FC = () => {
 
     const handleUseAsBaseImage = async (imageUrl: string) => {
         setError(null);
-        resetAll(); // Clear current state
-
+        resetAll(); 
         try {
             const file = await base64ToFile(imageUrl, `generated-image-${Date.now()}.png`);
             setBaseImage({ file, preview: imageUrl });
@@ -339,6 +335,10 @@ const App: React.FC = () => {
 
     const numImagesToGenerate = detailedPrompts ? detailedPrompts.variations.length : parseInt(numberOfImages, 10);
     const generateButtonText = `✨ Generate ${numImagesToGenerate} Image${numImagesToGenerate > 1 ? 's' : ''}`;
+    
+    const substylesForModal = selectedStyleCategory 
+        ? STYLE_TAXONOMY[selectedStyleCategory as keyof typeof STYLE_TAXONOMY] 
+        : [];
 
     return (
         <div className="min-h-screen bg-brand-dark p-4 sm:p-8 font-sans">
@@ -425,7 +425,7 @@ const App: React.FC = () => {
                 isOpen={isStyleModalOpen}
                 onClose={handleCloseStyleModal}
                 category={selectedStyleCategory}
-                substyles={selectedStyleCategory ? STYLE_TAXONOMY[selectedStyleCategory as keyof typeof STYLE_TAXONOMY] : []}
+                substyles={substylesForModal}
                 onSubstyleSelect={handleSubstyleSelect}
             />
         </div>

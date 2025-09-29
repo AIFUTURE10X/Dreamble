@@ -37,7 +37,7 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [loadingMessage, setLoadingMessage] = useState<string>('');
     const [lightboxImage, setLightboxImage] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    const [error, setError] = useState<React.ReactNode | null>(null);
     const [history, setHistory] = useState<string[]>([]);
 
     const [isStyleModalOpen, setIsStyleModalOpen] = useState<boolean>(false);
@@ -69,15 +69,49 @@ const App: React.FC = () => {
         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
         const lowerCaseError = errorMessage.toLowerCase();
 
-        // Check for specific Imagen daily limit error
-        if (lowerCaseError.includes('imagen') && lowerCaseError.includes('free generation')) {
+        if (lowerCaseError.includes('429') || lowerCaseError.includes('resource_exhausted') || lowerCaseError.includes('quota')) {
             setError(
-                "Imagen Daily Limit Reached. You've used up the limited free daily generations for the Imagen model (used for text-only image creation). To continue generating images, you must have a Google Cloud project with billing enabled. Please check your project's billing status in the Google Cloud Console to ensure it is active and linked correctly."
-            );
-        // Check for general quota/rate limit errors
-        } else if (lowerCaseError.includes('429') || lowerCaseError.includes('resource_exhausted') || lowerCaseError.includes('quota')) {
-            setError(
-                "API Quota Exceeded. You have reached the usage limit for the Gemini API. This can happen if you are on the free tier (which has low daily and per-minute limits) or if there is an issue with the billing setup for your Google Cloud project. To resolve this, please visit your Google Cloud Console to verify that billing is enabled and active for your project. This will grant you significantly higher usage limits."
+                <div className="bg-red-900/30 border border-red-700 p-4 rounded-lg text-left">
+                    <h3 className="font-bold text-lg text-white mb-2">API Quota Exceeded: Troubleshooting Guide</h3>
+                    <p className="text-red-200 mb-3">
+                        You've reached the usage limit for the Gemini API. This is almost always due to a configuration issue in your Google Cloud account. Please follow these steps to resolve it:
+                    </p>
+                    <ol className="list-decimal list-inside space-y-2 text-red-200">
+                        <li>
+                            <strong>Verify Billing is Active for Your Project:</strong>
+                            <ul className="list-disc list-inside pl-4 mt-1">
+                                <li>
+                                    Go to the{' '}
+                                    <a href="https://console.cloud.google.com/billing/projects" target="_blank" rel="noopener noreferrer" className="underline hover:text-white font-semibold">
+                                        Billing &gt; Your Projects
+                                    </a>{' '}
+                                    page.
+                                </li>
+                                <li>Find your project (e.g., "AI Product Scene Creator") and confirm that the "Billing account" column shows an active account, not "Billing is disabled".</li>
+                                <li>If disabled, use the (⋮) menu to "Change billing" and link your active billing account.</li>
+                            </ul>
+                        </li>
+                        <li>
+                            <strong>Generate a New API Key from the Correct Project:</strong>
+                            <ul className="list-disc list-inside pl-4 mt-1">
+                                <li>Go to the{' '}
+                                     <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="underline hover:text-white font-semibold">
+                                        APIs & Services &gt; Credentials
+                                    </a>{' '}
+                                    page.
+                                </li>
+                                <li><strong>Crucial:</strong> Use the project selector at the top of the page to choose your correctly billed project.</li>
+                                <li>Click "+ CREATE CREDENTIALS" and generate a **brand new API key**.</li>
+                            </ul>
+                        </li>
+                        <li>
+                            <strong>Update Your Environment Variable:</strong>
+                            <ul className="list-disc list-inside pl-4 mt-1">
+                                <li>Take this new key and update the <code>API_KEY</code> environment variable where this application is running.</li>
+                            </ul>
+                        </li>
+                    </ol>
+                </div>
             );
         } else {
              setError(`An unexpected error occurred: ${errorMessage}`);
@@ -362,7 +396,7 @@ const App: React.FC = () => {
                         promptData={detailedPrompts}
                     />
                     
-                    {error && <p className="text-red-400 text-sm text-center bg-red-900/20 p-3 rounded-lg">{error}</p>}
+                    {error && <div className="text-red-400 text-sm text-center p-3 rounded-lg">{error}</div>}
                     
                     <button 
                         onClick={handleGenerateImages}

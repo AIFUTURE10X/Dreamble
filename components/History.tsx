@@ -1,9 +1,10 @@
 import React from 'react';
+import type { HistoryItem } from '../types';
 
 interface HistoryProps {
-    images: string[];
-    onImageClick: (src: string) => void;
-    onDelete: (index: number) => void;
+    items: HistoryItem[];
+    onImageClick: (item: HistoryItem) => void;
+    onDelete: (id: string) => void;
     onUseAsBase: (src: string) => void;
 }
 
@@ -25,9 +26,16 @@ const DownloadIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     </svg>
 );
 
+const ViewIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+    </svg>
+);
 
-export const History: React.FC<HistoryProps> = ({ images, onImageClick, onDelete, onUseAsBase }) => {
-    if (images.length === 0) {
+
+export const History: React.FC<HistoryProps> = ({ items, onImageClick, onDelete, onUseAsBase }) => {
+    if (items.length === 0) {
         return null; // Don't render the section if there's no history
     }
 
@@ -45,36 +53,43 @@ export const History: React.FC<HistoryProps> = ({ images, onImageClick, onDelete
         <section className="max-w-7xl mx-auto mt-12 px-4 sm:px-0">
             <h2 className="text-2xl font-semibold mb-4 text-brand-text text-center">Generation History</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {images.map((src, index) => (
+                {items.map((item, index) => (
                     <div
-                        key={index}
+                        key={item.id}
                         className="relative aspect-square group cursor-pointer overflow-hidden rounded-lg shadow-lg"
-                        onClick={() => onImageClick(src)}
+                        onClick={() => onImageClick(item)}
                         role="button"
                         aria-label={`View generated image ${index + 1}`}
                     >
                         <img
-                            src={src}
+                            src={item.image}
                             alt={`Generated image ${index + 1}`}
                             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
                         />
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-60 transition-colors duration-300 flex flex-col items-center justify-center p-2 gap-2">
                              <button
-                                onClick={(e) => { e.stopPropagation(); onUseAsBase(src); }}
+                                onClick={(e) => { e.stopPropagation(); onImageClick(item); }}
+                                className="bg-white/80 backdrop-blur-sm hover:bg-white text-brand-dark font-bold py-2 px-3 rounded-lg transition duration-300 opacity-0 group-hover:opacity-100 flex items-center gap-1.5 text-xs"
+                                aria-label="View image"
+                            >
+                                <ViewIcon className="w-3.5 h-3.5" /> View Image
+                            </button>
+                             <button
+                                onClick={(e) => { e.stopPropagation(); onUseAsBase(item.image); }}
                                 className="bg-white/80 backdrop-blur-sm hover:bg-white text-brand-dark font-bold py-2 px-3 rounded-lg transition duration-300 opacity-0 group-hover:opacity-100 flex items-center gap-1.5 text-xs"
                                 aria-label="Use as base image"
                             >
                                 <ReuseIcon className="w-3.5 h-3.5" /> Use as Base
                             </button>
                             <button
-                                onClick={(e) => handleDownload(e, src)}
+                                onClick={(e) => handleDownload(e, item.image)}
                                 className="bg-white/80 backdrop-blur-sm hover:bg-white text-brand-dark font-bold py-2 px-3 rounded-lg transition duration-300 opacity-0 group-hover:opacity-100 flex items-center gap-1.5 text-xs"
                                 aria-label="Download image"
                             >
                                 <DownloadIcon className="w-3.5 h-3.5" /> Download
                             </button>
                              <button
-                                onClick={(e) => { e.stopPropagation(); onDelete(index); }}
+                                onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
                                 className="absolute top-1 right-1 bg-black bg-opacity-60 rounded-full p-1.5 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
                                 aria-label="Delete image"
                             >

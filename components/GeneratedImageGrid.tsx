@@ -22,7 +22,7 @@ const DownloadIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
 interface GeneratedImageGridProps {
     srcs: string[];
     onReset: () => void;
-    onImageClick: (src: string) => void;
+    onImageClick: (src: string, index: number) => void;
     onTweak: (index: number) => void;
     onUseAsBase: (src: string) => void;
     isLoading: boolean;
@@ -47,7 +47,7 @@ export const GeneratedImageGrid: React.FC<GeneratedImageGridProps> = ({ srcs, on
                      <div 
                         key={index}
                         className="relative group cursor-pointer bg-brand-gray rounded-lg"
-                        onClick={() => onImageClick(src)}
+                        onClick={() => onImageClick(src, index)}
                     >
                         <img src={src} alt={`Generated product scene ${index + 1}`} className="w-full h-full object-contain rounded-lg" />
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-60 transition-opacity rounded-lg flex items-center justify-center gap-2 flex-wrap p-2">

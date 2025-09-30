@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useRef } from 'react';
+
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { ImageUploader } from './components/ImageUploader';
 import { SelectInput } from './components/SelectInput';
@@ -9,10 +10,11 @@ import { Lightbox } from './components/Lightbox';
 import { History } from './components/History';
 import { StyleSelector } from './components/StyleSelector';
 import { StyleModal } from './components/StyleModal';
-import { LIGHTING_OPTIONS, ASPECT_RATIO_OPTIONS, CAMERA_PERSPECTIVE_OPTIONS, STYLE_TAXONOMY, NUMBER_OF_IMAGES_OPTIONS, MAX_HISTORY_SIZE } from './constants';
+import { LIGHTING_OPTIONS, ASPECT_RATIO_OPTIONS, CAMERA_PERSPECTIVE_OPTIONS, STYLE_TAXONOMY, NUMBER_OF_IMAGES_OPTIONS } from './constants';
 import { resizeImageWithPadding, base64ToFile } from './services/imageService';
 import { generateDetailedPrompts, editProductImage, generateImageFromText } from './services/geminiService';
-import type { ImageFile } from './types';
+import { getAllHistoryItems, addHistoryItems, deleteHistoryItem } from './services/dbService';
+import type { ImageFile, HistoryItem } from './types';
 
 interface CreativeConcept {
     creativeConcept: string;
@@ -36,14 +38,26 @@ const App: React.FC = () => {
     
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [loadingMessage, setLoadingMessage] = useState<string>('');
-    const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+    const [lightboxImage, setLightboxImage] = useState<HistoryItem | null>(null);
     const [error, setError] = useState<React.ReactNode | null>(null);
-    const [history, setHistory] = useState<string[]>([]);
+    
+    const [history, setHistory] = useState<HistoryItem[]>([]);
 
     const [isStyleModalOpen, setIsStyleModalOpen] = useState<boolean>(false);
     const [selectedStyleCategory, setSelectedStyleCategory] = useState<string | null>(null);
 
     const isGeneratingRef = useRef(false);
+
+    // Load history from IndexedDB on initial render
+    useEffect(() => {
+        getAllHistoryItems()
+            .then(items => setHistory(items))
+            .catch(err => {
+                console.error('Failed to load history from IndexedDB:', err);
+                setError('Could not load generation history.');
+                setHistory([]);
+            });
+    }, []);
 
     if (!geminiApiKey) {
         return (
@@ -201,7 +215,7 @@ const App: React.FC = () => {
         setGeneratedImages([]);
 
         try {
-            const imageUrls: string[] = [];
+            const newHistoryItems: HistoryItem[] = [];
             const variations = detailedPrompts.variations;
             
             for (const [index, variation] of variations.entries()) {
@@ -218,7 +232,13 @@ const App: React.FC = () => {
                 }
                 
                 const imageUrl = `data:image/png;base64,${newImageBase64}`;
-                imageUrls.push(imageUrl);
+                newHistoryItems.push({ 
+                    id: `local-${Date.now()}-${index}`, 
+                    image: imageUrl, 
+                    prompt: fullPromptForVariation,
+                    createdAt: Date.now() 
+                });
+
                 setGeneratedImages(prev => [...prev, imageUrl]);
                 
                 if (index < variations.length - 1) {
@@ -226,8 +246,10 @@ const App: React.FC = () => {
                     await new Promise(resolve => setTimeout(resolve, 10000));
                 }
             }
-
-            setHistory(prev => [...imageUrls, ...prev].slice(0, MAX_HISTORY_SIZE));
+            
+            await addHistoryItems(newHistoryItems);
+            const updatedHistory = await getAllHistoryItems();
+            setHistory(updatedHistory);
 
         } catch (err) {
             handleApiError(err);
@@ -265,6 +287,11 @@ const App: React.FC = () => {
                 newImages[indexToTweak] = imageUrl;
                 return newImages;
             });
+            
+            const newHistoryItem: HistoryItem = { id: `local-${Date.now()}`, image: imageUrl, prompt: fullPromptForTweak, createdAt: Date.now() };
+            await addHistoryItems([newHistoryItem]);
+            const updatedHistory = await getAllHistoryItems();
+            setHistory(updatedHistory);
 
         } catch (err) {
             handleApiError(err);
@@ -298,7 +325,7 @@ const App: React.FC = () => {
         handleCloseStyleModal();
     };
 
-    const handleOpenLightbox = (src: string) => setLightboxImage(src);
+    const handleOpenLightbox = (item: HistoryItem) => setLightboxImage(item);
     const handleCloseLightbox = () => setLightboxImage(null);
     
     const resetAll = () => {
@@ -328,10 +355,24 @@ const App: React.FC = () => {
              console.error(err);
         }
     };
-
-    const handleDeleteFromHistory = (indexToDelete: number) => {
-        setHistory(prev => prev.filter((_, index) => index !== indexToDelete));
+    
+    const handleGeneratedImageClick = (src: string, index: number) => {
+        if (!detailedPrompts) return;
+        const prompt = `${detailedPrompts.creativeConcept}. ${detailedPrompts.variations[index]}`;
+        handleOpenLightbox({ id: `gen-${index}`, image: src, prompt, createdAt: Date.now() });
     };
+
+    const handleDeleteFromHistory = async (idToDelete: string) => {
+        setError(null);
+        try {
+            await deleteHistoryItem(idToDelete);
+            setHistory(prev => prev.filter(item => item.id !== idToDelete));
+        } catch (error) {
+            console.error('Failed to delete history item:', error);
+            setError('Could not delete history item.');
+        }
+    };
+
 
     const numImagesToGenerate = detailedPrompts ? detailedPrompts.variations.length : parseInt(numberOfImages, 10);
     const generateButtonText = `✨ Generate ${numImagesToGenerate} Image${numImagesToGenerate > 1 ? 's' : ''}`;
@@ -352,7 +393,7 @@ const App: React.FC = () => {
                          <GeneratedImageGrid 
                              srcs={generatedImages} 
                              onReset={resetAll}
-                             onImageClick={handleOpenLightbox}
+                             onImageClick={handleGeneratedImageClick}
                              onTweak={handleTweakImage}
                              onUseAsBase={handleUseAsBaseImage}
                              isLoading={isLoading}
@@ -415,12 +456,12 @@ const App: React.FC = () => {
                 </div>
             </main>
             <History 
-                images={history} 
+                items={history} 
                 onImageClick={handleOpenLightbox} 
                 onDelete={handleDeleteFromHistory}
                 onUseAsBase={handleUseAsBaseImage}
             />
-            {lightboxImage && <Lightbox src={lightboxImage} onClose={handleCloseLightbox} />}
+            {lightboxImage && <Lightbox item={lightboxImage} onClose={handleCloseLightbox} />}
             <StyleModal
                 isOpen={isStyleModalOpen}
                 onClose={handleCloseStyleModal}

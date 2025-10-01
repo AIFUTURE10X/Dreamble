@@ -310,8 +310,8 @@ const App: React.FC = () => {
         setIsStyleModalOpen(false);
         setSelectedStyleCategory(null);
     };
-
-    const handleSubstyleSelect = (substyle: string) => {
+    
+    const applyStyle = (substyle: string) => {
         setSceneDescription(prev => {
             const styleText = `, ${substyle} style`;
             if (prev.trim() === '') {
@@ -322,6 +322,10 @@ const App: React.FC = () => {
             }
             return prev + styleText;
         });
+    };
+
+    const handleSubstyleSelect = (substyle: string) => {
+        applyStyle(substyle);
         handleCloseStyleModal();
     };
 
@@ -422,6 +426,7 @@ const App: React.FC = () => {
                     <TextAreaInput placeholder="Describe the image you want to create..." value={sceneDescription} onChange={(e) => setSceneDescription(e.target.value)} />
                     <StyleSelector 
                         onCategoryClick={handleCategoryClick} 
+                        onSubstyleSelect={applyStyle}
                     />
 
                     <div className="border-t border-brand-light-gray my-2"></div>

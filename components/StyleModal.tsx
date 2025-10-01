@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import type { Substyle } from '../constants';
 
@@ -92,10 +93,11 @@ export const StyleModal: React.FC<StyleModalProps> = ({ isOpen, onClose, categor
                             className="flex flex-col items-center justify-center gap-2 bg-brand-dark hover:bg-brand-light-gray p-3 rounded-lg transition-all duration-300 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-brand-accent"
                         >
                             <img src={substyle.imageUrl} alt={substyle.name} className="w-20 h-20 rounded-md object-cover" />
-                            <span className="text-sm font-semibold text-brand-text">{substyle.name}</span>
+                            <span className="text-sm font-semibold text-brand-text text-center">{substyle.name}</span>
                         </button>
                     ))}
                 </div>
+                
                  {hoveredSubstyle && (
                     <div
                         style={popoverStyle}

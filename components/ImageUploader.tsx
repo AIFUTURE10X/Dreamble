@@ -17,9 +17,10 @@ interface ImageUploaderProps {
     maskImage?: string | null;
     onClearMask?: () => void;
     tooltipText?: string;
+    onRemoveAll?: () => void;
 }
 
-export const ImageUploader: React.FC<ImageUploaderProps> = ({ onFilesSelected, onRemove, title, secondaryTitle, id, images, maxFiles, onEdit, maskImage, onClearMask, tooltipText }) => {
+export const ImageUploader: React.FC<ImageUploaderProps> = ({ onFilesSelected, onRemove, title, secondaryTitle, id, images, maxFiles, onEdit, maskImage, onClearMask, tooltipText, onRemoveAll }) => {
     const [isDragging, setIsDragging] = useState(false);
 
     const handleFileChange = (files: FileList | null) => {
@@ -80,12 +81,22 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onFilesSelected, o
                          <p className="text-sm font-medium text-brand-accent">Upload Up To {maxFiles} Images</p>
                      )}
                 </div>
-                {isSingleFileMode && onEdit && images.length > 0 && (
-                    <button onClick={onEdit} className="flex items-center gap-2 text-sm font-semibold text-brand-accent hover:underline flex-shrink-0 ml-4">
-                        <PencilIcon className="w-4 h-4" />
-                        Edit
-                    </button>
-                )}
+                <div className="flex-shrink-0 ml-4">
+                    {isSingleFileMode && onEdit && images.length > 0 && (
+                        <button onClick={onEdit} className="flex items-center gap-2 text-sm font-semibold text-brand-accent hover:underline">
+                            <PencilIcon className="w-4 h-4" />
+                            Edit
+                        </button>
+                    )}
+                    {!isSingleFileMode && onRemoveAll && images.length > 1 && (
+                        <button
+                            onClick={onRemoveAll}
+                            className="text-sm font-semibold text-red-500 hover:text-red-400 transition-colors"
+                        >
+                            Clear All
+                        </button>
+                    )}
+                </div>
             </div>
 
             {images.length > 0 && (

@@ -1,10 +1,12 @@
 import React from 'react';
-import type { GeneratedImage, HistoryItem } from '../types';
+import type { GeneratedImage } from '../types';
 import { ReuseIcon } from './icons/ReuseIcon';
 import { PencilIcon } from './icons/PencilIcon';
 import { TweakIcon } from './icons/TweakIcon';
 import { DownloadIcon } from './icons/DownloadIcon';
 import { StarIcon } from './icons/StarIcon';
+import { UpscaleIcon } from './icons/UpscaleIcon';
+import { UpscalePopover } from './UpscalePopover';
 
 
 interface GeneratedImageGridProps {
@@ -17,13 +19,16 @@ interface GeneratedImageGridProps {
     onDownload: (image: GeneratedImage) => void;
     onToggleFavorite: (item: GeneratedImage) => void;
     favoriteIds: Set<string>;
+    onUpscale: (image: GeneratedImage, level: string) => void;
+    upscalingId: string | null;
 }
 
-export const GeneratedImageGrid: React.FC<GeneratedImageGridProps> = ({ images, onReset, onImageClick, onUseAsBase, onEdit, onTweak, onDownload, onToggleFavorite, favoriteIds }) => {
+export const GeneratedImageGrid: React.FC<GeneratedImageGridProps> = ({ images, onReset, onImageClick, onUseAsBase, onEdit, onTweak, onDownload, onToggleFavorite, favoriteIds, onUpscale, upscalingId }) => {
     const isSingleImage = images.length === 1;
 
     const renderImage = (image: GeneratedImage, index: number) => {
         const isFavorite = favoriteIds.has(image.id);
+        const isUpscaling = upscalingId === image.id;
         return (
             <div 
                 key={index} 
@@ -49,6 +54,26 @@ export const GeneratedImageGrid: React.FC<GeneratedImageGridProps> = ({ images, 
                         <button onClick={(e) => { e.stopPropagation(); onTweak(index); }} className="flex items-center gap-2 text-sm font-semibold py-2 px-3 rounded-md bg-panel/90 dark:bg-dark-panel/90 backdrop-blur-sm hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors">
                             <TweakIcon className="w-4 h-4" /> Tweak
                         </button>
+                        <UpscalePopover 
+                            onSelect={(level) => onUpscale(image, level)}
+                            isUpscaling={isUpscaling}
+                        >
+                            <button 
+                                onClick={(e) => e.stopPropagation()}
+                                disabled={isUpscaling}
+                                className="flex items-center gap-2 text-sm font-semibold py-2 px-3 rounded-md bg-panel/90 dark:bg-dark-panel/90 backdrop-blur-sm hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors disabled:opacity-50 disabled:cursor-wait"
+                            >
+                                {isUpscaling ? (
+                                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                ) : (
+                                    <UpscaleIcon className="w-4 h-4" />
+                                )}
+                                {isUpscaling ? 'Upscaling...' : 'Upscale'}
+                            </button>
+                        </UpscalePopover>
                         <button onClick={(e) => { e.stopPropagation(); onDownload(image); }} className="flex items-center gap-2 text-sm font-semibold py-2 px-3 rounded-md bg-panel/90 dark:bg-dark-panel/90 backdrop-blur-sm hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors">
                             <DownloadIcon className="w-4 h-4" /> Download
                         </button>

@@ -15,9 +15,11 @@ import { PreciseReferenceToggle } from './components/PreciseReferenceToggle';
 import { MaskingEditor } from './components/MaskingEditor';
 import { Tabs } from './components/Tabs';
 import { ThemeToggle } from './components/ThemeToggle';
-import { LIGHTING_OPTIONS, ASPECT_RATIO_OPTIONS, CAMERA_PERSPECTIVE_OPTIONS, STYLE_TAXONOMY, NUMBER_OF_IMAGES_OPTIONS, IMAGE_SIZE_OPTIONS } from './constants';
+import { HistoryIcon } from './components/icons/HistoryIcon';
+import { StarIcon } from './components/icons/StarIcon';
+import { LIGHTING_OPTIONS, ASPECT_RATIO_OPTIONS, CAMERA_PERSPECTIVE_OPTIONS, STYLE_TAXONOMY, NUMBER_OF_IMAGES_OPTIONS, IMAGE_SIZE_OPTIONS, UPSCALE_OPTIONS } from './constants';
 import { resizeImageWithPadding, base64ToFile, resizeBase64Image, resizeAndPadMask } from './services/imageService';
-import { generateDetailedPrompts, editProductImage, generateImageFromText } from './services/geminiService';
+import { generateDetailedPrompts, editProductImage, generateImageFromText, upscaleImage } from './services/geminiService';
 import { getAllHistoryItems, addHistoryItems, deleteHistoryItem, replaceAllHistory, getAllFavorites, getFavoriteIds, addFavorite, removeFavorite } from './services/dbService';
 import type { ImageFile, HistoryItem, GeneratedImage } from './types';
 
@@ -102,7 +104,8 @@ const App: React.FC = () => {
     const [isMaskEditorOpen, setIsMaskEditorOpen] = useState<boolean>(false);
     const [imageToEdit, setImageToEdit] = useState<string | null>(null);
     const [maskImage, setMaskImage] = useState<string | null>(null);
-    const [isAdvancedSettingsOpen, setIsAdvancedSettingsOpen] = useState(false);
+    const [upscalingId, setUpscalingId] = useState<string | null>(null);
+
 
     const isGeneratingRef = useRef(false);
 
@@ -238,6 +241,11 @@ const App: React.FC = () => {
             }
             return newArr;
         });
+    };
+
+    const handleRemoveAllReferenceImages = () => {
+        referenceImages.forEach(img => URL.revokeObjectURL(img.preview));
+        setReferenceImages([]);
     };
 
     const getSeed = (): number => {
@@ -462,6 +470,68 @@ const App: React.FC = () => {
         }
     }, [ai, generatedImages, aspectRatio, imageSize, negativePrompt, seed, isSeedLocked]);
 
+    const handleUpscaleImage = useCallback(async (itemToUpscale: HistoryItem | GeneratedImage, upscaleLevel: string) => {
+        if (isGeneratingRef.current || upscalingId) return;
+
+        setUpscalingId(itemToUpscale.id);
+        isGeneratingRef.current = true;
+        setLightboxState(null); // Close lightbox if open
+        setLoadingMessage('Upscaling image...'); // Show a general loading message
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            const base64Data = ('src' in itemToUpscale ? itemToUpscale.src : itemToUpscale.image).split(',')[1];
+            const upscaledBase64 = await upscaleImage(ai, base64Data, upscaleLevel);
+            const upscaledUrl = `data:image/png;base64,${upscaledBase64}`;
+
+            // Create a new image element to get new dimensions
+            const img = new Image();
+            img.src = upscaledUrl;
+            await new Promise(resolve => { img.onload = resolve });
+
+            // FIX: Spreading a union type (`HistoryItem | GeneratedImage`) causes a TypeScript error
+            // because `GeneratedImage` lacks the `createdAt` property required by `HistoryItem`.
+            // Reconstructing the object explicitly from its properties ensures type safety.
+            const updatedItem: HistoryItem & Partial<GeneratedImage> = {
+                id: itemToUpscale.id,
+                prompt: itemToUpscale.prompt,
+                negativePrompt: itemToUpscale.negativePrompt,
+                seed: itemToUpscale.seed,
+                createdAt: 'createdAt' in itemToUpscale ? itemToUpscale.createdAt : Date.now(),
+                image: upscaledUrl,
+                src: upscaledUrl,
+                width: img.width,
+                height: img.height,
+            };
+            
+            // This is a safe cast because we added all the properties
+            const updatedGeneratedImage = updatedItem as GeneratedImage;
+
+            // Update state for GeneratedImageGrid if the upscaled item is there
+            setGeneratedImages(prev => prev.map(img => img.id === itemToUpscale.id ? updatedGeneratedImage : img));
+
+            // Update state for History
+            setHistory(prev => prev.map(item => item.id === itemToUpscale.id ? updatedItem : item));
+            
+            // Persist change to history DB
+            await addHistoryItems([updatedItem]);
+
+            // If it's a favorite, update it there too
+            if (favoriteIds.has(itemToUpscale.id)) {
+                setFavorites(prev => prev.map(item => item.id === itemToUpscale.id ? updatedItem : item));
+                await addFavorite(updatedItem);
+            }
+
+        } catch (err) {
+            handleApiError(err);
+        } finally {
+            setUpscalingId(null);
+            isGeneratingRef.current = false;
+            setIsLoading(false);
+        }
+    }, [ai, upscalingId, favoriteIds]);
+
     const handleCategoryClick = (category: string) => {
         setSelectedStyleCategory(category);
         setIsStyleModalOpen(true);
@@ -504,8 +574,8 @@ const App: React.FC = () => {
         setIsSeedLocked(false);
     }
     
-    const handleNumberOfImagesChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setNumberOfImages(e.target.value);
+    const handleNumberOfImagesChange = (value: string) => {
+        setNumberOfImages(value);
         setDetailedPrompts(null); // Reset prompts when selection changes
     };
 
@@ -721,9 +791,9 @@ const App: React.FC = () => {
         : [];
     
     const mainTabs = [
-        { id: 'create', label: 'Create' },
-        { id: 'history', label: 'History' },
-        { id: 'favorites', label: 'Favorites' }
+        { id: 'create', label: 'Create', icon: SparklesIcon },
+        { id: 'history', label: 'History', icon: HistoryIcon },
+        { id: 'favorites', label: 'Favorites', icon: StarIcon }
     ];
 
     const controlPanelTabs = [
@@ -753,40 +823,42 @@ const App: React.FC = () => {
                         <SelectInput label="Aspect Ratio" options={ASPECT_RATIO_OPTIONS} value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} />
                         <SelectInput label="Image Size" options={IMAGE_SIZE_OPTIONS} value={imageSize} onChange={(e) => setImageSize(e.target.value)} />
                     </div>
-                    <div className="bg-panel-secondary dark:bg-dark-panel-secondary rounded-lg border border-border dark:border-dark-border">
-                        <button
-                            onClick={() => setIsAdvancedSettingsOpen(!isAdvancedSettingsOpen)}
-                            className="w-full flex justify-between items-center p-4"
-                            aria-expanded={isAdvancedSettingsOpen}
-                            aria-controls="advanced-settings-panel"
-                        >
-                            <h4 className="text-sm font-bold text-text-secondary dark:text-dark-text-secondary tracking-wider">ADVANCED SETTINGS</h4>
-                             <svg className={`w-4 h-4 text-text-secondary dark:text-dark-text-secondary transition-transform ${isAdvancedSettingsOpen ? 'rotate-180' : ''}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                            </svg>
-                        </button>
-                         {isAdvancedSettingsOpen && (
-                            <div id="advanced-settings-panel" className="p-4 border-t border-border dark:border-dark-border space-y-6">
-                                <div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <SelectInput isSimple={true} label="Number of Images" options={NUMBER_OF_IMAGES_OPTIONS} value={numberOfImages} onChange={handleNumberOfImagesChange} />
-                                        <SeedControl
-                                            seed={seed}
-                                            onSeedChange={setSeed}
-                                            isLocked={isSeedLocked}
-                                            onLockToggle={handleLockToggle}
-                                        />
-                                    </div>
-                                    <p className="text-xs text-text-secondary dark:text-dark-text-secondary text-center mt-2 tracking-wide uppercase">
-                                        {isSeedLocked ? 'Seed is locked for consistency' : 'Seed is unlocked to give more variety'}
-                                    </p>
-                                </div>
-                                 <PreciseReferenceToggle
-                                    isChecked={isPreciseReference}
-                                    onChange={setIsPreciseReference}
+
+                    <div className="bg-settings-bg dark:bg-dark-settings-bg p-4 rounded-lg space-y-4">
+                        <h4 className="text-sm font-bold text-text-secondary dark:text-dark-text-secondary tracking-wider uppercase text-left">SETTINGS</h4>
+                        
+                        <div className="flex items-center gap-4">
+                            <div className="w-1/3">
+                                <SelectInput 
+                                    isSimple={true} 
+                                    label="Number of Images" 
+                                    options={NUMBER_OF_IMAGES_OPTIONS} 
+                                    value={numberOfImages} 
+                                    onChange={(e) => handleNumberOfImagesChange(e.target.value)} 
                                 />
                             </div>
-                         )}
+                            <div className="w-2/3">
+                                <SeedControl
+                                    seed={seed}
+                                    onSeedChange={setSeed}
+                                    isLocked={isSeedLocked}
+                                    onLockToggle={handleLockToggle}
+                                />
+                            </div>
+                        </div>
+
+                        <p className="text-xs text-text-secondary dark:text-dark-text-secondary text-center tracking-wide uppercase">
+                            {isSeedLocked ? 'SEED IS LOCKED FOR CONSISTENCY' : 'SEED IS UNLOCKED TO GIVE MORE VARIETY'}
+                        </p>
+                        
+                        <div className="relative flex items-center">
+                            <div className="flex-grow border-t border-gray-300 dark:border-gray-600"></div>
+                        </div>
+                        
+                        <PreciseReferenceToggle
+                            isChecked={isPreciseReference}
+                            onChange={setIsPreciseReference}
+                        />
                     </div>
                 </div>
             )
@@ -815,24 +887,33 @@ const App: React.FC = () => {
 
             <div className="border-b border-border dark:border-dark-border">
                 <nav className="flex space-x-6 sm:space-x-8 px-4 sm:px-6" aria-label="Main navigation">
-                    {mainTabs.map(tab => (
-                        <button
-                            key={tab.id}
-                            onClick={() => setMainTab(tab.id as any)}
-                            className={`
-                                whitespace-nowrap py-4 px-1 border-b-2 font-bold text-lg
-                                transition-colors duration-200 ease-in-out
-                                ${
-                                    mainTab === tab.id
-                                        ? 'border-brand-accent text-text-primary dark:text-dark-text-primary'
-                                        : 'border-transparent text-text-secondary dark:text-dark-text-secondary hover:text-text-primary dark:hover:text-dark-text-primary hover:border-border dark:hover:border-dark-border'
-                                }
-                            `}
-                            aria-current={mainTab === tab.id ? 'page' : undefined}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
+                    {mainTabs.map(tab => {
+                        const Icon = tab.icon;
+                        const isActive = mainTab === tab.id;
+                        
+                        return (
+                            <button
+                                key={tab.id}
+                                onClick={() => setMainTab(tab.id as any)}
+                                className={`
+                                    whitespace-nowrap py-4 px-1 border-b-2 font-bold text-lg
+                                    transition-colors duration-200 ease-in-out flex items-center gap-2
+                                    ${
+                                        isActive
+                                            ? 'border-brand-accent text-text-primary dark:text-dark-text-primary'
+                                            : 'border-transparent text-text-secondary dark:text-dark-text-secondary hover:text-text-primary dark:hover:text-dark-text-primary hover:border-border dark:hover:border-dark-border'
+                                    }
+                                `}
+                                aria-current={isActive ? 'page' : undefined}
+                            >
+                                <Icon 
+                                    className={`w-5 h-5 transition-colors ${isActive ? 'text-brand-accent' : ''}`} 
+                                    {...(tab.id === 'favorites' && { filled: isActive })} 
+                                />
+                                <span>{tab.label}</span>
+                            </button>
+                        );
+                    })}
                 </nav>
             </div>
             
@@ -851,6 +932,8 @@ const App: React.FC = () => {
                                     onDownload={handleDownload}
                                     onToggleFavorite={handleToggleFavorite}
                                     favoriteIds={favoriteIds}
+                                    onUpscale={handleUpscaleImage}
+                                    upscalingId={upscalingId}
                                 />
                             ) : (
                                 <div className="flex flex-col flex-grow items-center justify-center bg-panel dark:bg-dark-panel rounded-lg p-8 text-center border-4 border-brand-accent">
@@ -881,6 +964,7 @@ const App: React.FC = () => {
                                     id="ref-uploader" 
                                     onFilesSelected={handleReferenceImageUpload} 
                                     onRemove={handleRemoveReferenceImage} 
+                                    onRemoveAll={handleRemoveAllReferenceImages}
                                     images={referenceImages} 
                                     maxFiles={8} 
                                     tooltipText="Guide the AI's style, color, and mood. The AI will draw inspiration from these images to create a scene that matches your desired aesthetic."
@@ -977,6 +1061,8 @@ const App: React.FC = () => {
                             onRestoreHistory={handleRestoreHistory}
                             onToggleFavorite={handleToggleFavorite}
                             favoriteIds={favoriteIds}
+                            onUpscale={handleUpscaleImage}
+                            upscalingId={upscalingId}
                         />
                     </main>
                 )}
@@ -989,6 +1075,8 @@ const App: React.FC = () => {
                             onEdit={handleOpenMaskEditor}
                             onDownload={handleDownload}
                             onToggleFavorite={handleToggleFavorite}
+                            onUpscale={handleUpscaleImage}
+                            upscalingId={upscalingId}
                         />
                     </main>
                 )}
@@ -1004,6 +1092,8 @@ const App: React.FC = () => {
                     onDownload={handleDownload}
                     onToggleFavorite={handleToggleFavorite}
                     favoriteIds={favoriteIds}
+                    onUpscale={handleUpscaleImage}
+                    upscalingId={upscalingId}
                 />
             )}
             <StyleModal

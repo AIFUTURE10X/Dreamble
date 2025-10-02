@@ -264,7 +264,7 @@ export const generateImageFromText = async (
     const mappedAspectRatio = mapAspectRatioForImagen(aspectRatio);
     
     const response = await ai.models.generateImages({
-        model: 'imagen-4.0-generate-001',
+        model: 'imagen-4.0-generate-01',
         prompt: prompt,
         config: {
             seed,
@@ -280,4 +280,52 @@ export const generateImageFromText = async (
     }
     
     throw new Error('Image generation failed. No image data was returned from the text-to-image model.');
+};
+
+
+export const upscaleImage = async (
+    ai: GoogleGenAI,
+    base64Image: string,
+    upscaleLevel: string,
+    mimeType: string = 'image/png'
+): Promise<string> => {
+    const imagePart = {
+        inlineData: {
+            mimeType: mimeType,
+            data: base64Image,
+        },
+    };
+
+    const resolutionText = upscaleLevel === '4x'
+        ? 'approximately 4K resolution (e.g., 4096x4096)'
+        : 'approximately 2K resolution (e.g., 2048x2048)';
+    
+    const prompt = `You are an expert digital artist specializing in ultra-high-resolution remastering. Your task is to upscale the provided image to ${resolutionText}, making it incredibly sharp and detailed.
+
+Your goal is to make the image look as if it were natively captured at this higher resolution. Intelligently add fine-grained, plausible details where the original is blurry or soft. Sharpen key edges without creating harsh halos, refine textures (like skin, fabric, wood, metal), and enhance the subtle nuances in lighting and shadows.
+
+**Crucially, you must strictly preserve the original art style, composition, subjects, and overall color palette.** Do not add, remove, or change any objects or characters. The final output must be a stunningly crisp and detailed version of the exact same image.`;
+    
+    const parts = [ imagePart, { text: prompt } ];
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image-preview',
+        contents: { parts },
+        config: {
+            responseModalities: [Modality.IMAGE, Modality.TEXT],
+        },
+    });
+    
+    for (const part of response.candidates?.[0]?.content?.parts ?? []) {
+        if (part.inlineData) {
+            return part.inlineData.data;
+        }
+    }
+    
+    const textPart = response.text;
+    if (textPart) {
+         throw new Error(`Image upscaling failed. Model response: ${textPart}`);
+    }
+
+    throw new Error('Image upscaling failed. No image data was returned.');
 };

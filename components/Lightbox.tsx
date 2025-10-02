@@ -6,6 +6,8 @@ import { ReuseIcon } from './icons/ReuseIcon';
 import { DownloadIcon } from './icons/DownloadIcon';
 import { CopyIcon } from './icons/CopyIcon';
 import { StarIcon } from './icons/StarIcon';
+import { UpscaleIcon } from './icons/UpscaleIcon';
+import { UpscalePopover } from './UpscalePopover';
 
 interface LightboxProps {
     state: {
@@ -19,6 +21,8 @@ interface LightboxProps {
     onDownload: (item: HistoryItem) => void;
     onToggleFavorite: (item: HistoryItem) => void;
     favoriteIds: Set<string>;
+    onUpscale: (item: HistoryItem, level: string) => void;
+    upscalingId: string | null;
 }
 
 const ChevronUpIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
@@ -96,7 +100,7 @@ const ScrollableText: React.FC<{ label: string; text: string; onCopy: () => void
     );
 };
 
-export const Lightbox: React.FC<LightboxProps> = ({ state, onClose, onUseAsBase, onEdit, onTweak, onDownload, onToggleFavorite, favoriteIds }) => {
+export const Lightbox: React.FC<LightboxProps> = ({ state, onClose, onUseAsBase, onEdit, onTweak, onDownload, onToggleFavorite, favoriteIds, onUpscale, upscalingId }) => {
     const { item, tweakIndex } = state;
     const [copied, setCopied] = useState<string | null>(null);
     const [isInfoVisible, setIsInfoVisible] = useState(true);
@@ -118,6 +122,7 @@ export const Lightbox: React.FC<LightboxProps> = ({ state, onClose, onUseAsBase,
     };
 
     const isFavorite = favoriteIds.has(item.id);
+    const isUpscaling = upscalingId === item.id;
 
     return (
         <div
@@ -183,6 +188,27 @@ export const Lightbox: React.FC<LightboxProps> = ({ state, onClose, onUseAsBase,
                                     <button onClick={() => onUseAsBase(item.image)} className="flex items-center gap-2 text-sm font-semibold py-2 px-4 rounded-lg bg-panel dark:bg-dark-panel hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors">
                                         <ReuseIcon className="w-4 h-4" /> Use as Base
                                     </button>
+                                    <UpscalePopover 
+                                        onSelect={(level) => onUpscale(item, level)}
+                                        isUpscaling={isUpscaling}
+                                        popoverDirection="top"
+                                    >
+                                        <button 
+                                            onClick={(e) => e.stopPropagation()}
+                                            disabled={isUpscaling}
+                                            className="flex items-center gap-2 text-sm font-semibold py-2 px-4 rounded-lg bg-panel dark:bg-dark-panel hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors disabled:opacity-50 disabled:cursor-wait"
+                                        >
+                                            {isUpscaling ? (
+                                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                            ) : (
+                                                <UpscaleIcon className="w-4 h-4" />
+                                            )}
+                                            {isUpscaling ? 'Upscaling...' : 'Upscale'}
+                                        </button>
+                                    </UpscalePopover>
                                     <button onClick={() => onEdit(item.image)} className="flex items-center gap-2 text-sm font-semibold py-2 px-4 rounded-lg bg-panel dark:bg-dark-panel hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors">
                                         <PencilIcon className="w-4 h-4" /> Edit
                                     </button>

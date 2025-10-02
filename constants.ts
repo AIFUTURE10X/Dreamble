@@ -1,4 +1,5 @@
 
+
 export const LIGHTING_OPTIONS: string[] = [
     "Studio",
     "Natural",
@@ -131,6 +132,12 @@ export const CAMERA_PERSPECTIVE_OPTIONS: string[] = [
 ];
 
 export const NUMBER_OF_IMAGES_OPTIONS: string[] = ["1", "2", "3", "4"];
+
+export const UPSCALE_OPTIONS: { value: string, label: string }[] = [
+    { value: '2x', label: '2x Upscale (Approx. 2K)' },
+    { value: '4x', label: '4x Upscale (Approx. 4K)' },
+];
+
 export const MAX_HISTORY_SIZE: number = 50;
 
 export interface Substyle {

@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 interface TextAreaInputProps {
@@ -11,7 +10,7 @@ export const TextAreaInput: React.FC<TextAreaInputProps> = ({ placeholder, value
     return (
         <textarea
             rows={3}
-            className="w-full bg-brand-dark border border-brand-light-gray text-brand-text rounded-lg p-3 focus:ring-brand-accent focus:border-brand-accent resize-none"
+            className="w-full bg-panel dark:bg-dark-panel border border-border dark:border-dark-border text-text-primary dark:text-dark-text-primary rounded-lg p-3 focus:ring-brand-accent focus:border-brand-accent resize-none"
             placeholder={placeholder}
             value={value}
             onChange={onChange}

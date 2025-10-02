@@ -6,17 +6,37 @@
     <title>AI Product Scene Creator</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
+      // This script runs before the page is rendered to prevent a flash of the wrong theme.
+      if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+
       tailwind.config = {
+        darkMode: 'class', // Enable class-based dark mode
         theme: {
           extend: {
             colors: {
-              'brand-gray': '#1F1F1F',
-              'brand-dark': '#121212',
-              'brand-light-gray': '#333333',
-              'brand-text': '#E0E0E0',
-              'brand-text-secondary': '#A0A0A0',
-              'brand-accent': '#F5A623',
-              'brand-accent-hover': '#F7B64A',
+              // Light Theme Colors
+              'background': '#F9FAFB', // gray-50
+              'panel': '#FFFFFF',
+              'panel-secondary': '#F3F4F6', // gray-100
+              'border': '#D1D5DB', // gray-300
+              'text-primary': '#111827', // gray-900
+              'text-secondary': '#6B7280', // gray-500
+              
+              // Dark Theme Colors
+              'dark-background': '#121212',
+              'dark-panel': '#1F1F1F',
+              'dark-panel-secondary': '#333333',
+              'dark-border': '#333333',
+              'dark-text-primary': '#E0E0E0',
+              'dark-text-secondary': '#A0A0A0',
+
+              // Brand/Accent Colors (consistent across themes)
+              'brand-accent': '#fb540c',
+              'brand-accent-hover': '#e24c0b',
             },
           }
         }
@@ -33,7 +53,7 @@
 }
 </script>
 </head>
-  <body class="bg-brand-dark text-brand-text">
+  <body class="bg-background dark:bg-dark-background text-text-primary dark:text-dark-text-primary">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

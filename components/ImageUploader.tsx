@@ -1,24 +1,25 @@
 import React, { useState, useCallback } from 'react';
 import { UploadIcon } from './icons/UploadIcon';
+import { PencilIcon } from './icons/PencilIcon';
+import { InfoIcon } from './icons/InfoIcon';
+import { TrashIcon } from './icons/TrashIcon';
 import type { ImageFile } from '../types';
-
-const TrashIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.124-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.077-2.09.921-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-    </svg>
-);
-
 
 interface ImageUploaderProps {
     onFilesSelected: (files: File[]) => void;
     onRemove: (index: number) => void;
     title: string;
+    secondaryTitle?: string;
     id: string;
     images: ImageFile[];
     maxFiles: number;
+    onEdit?: () => void;
+    maskImage?: string | null;
+    onClearMask?: () => void;
+    tooltipText?: string;
 }
 
-export const ImageUploader: React.FC<ImageUploaderProps> = ({ onFilesSelected, onRemove, title, id, images, maxFiles }) => {
+export const ImageUploader: React.FC<ImageUploaderProps> = ({ onFilesSelected, onRemove, title, secondaryTitle, id, images, maxFiles, onEdit, maskImage, onClearMask, tooltipText }) => {
     const [isDragging, setIsDragging] = useState(false);
 
     const handleFileChange = (files: FileList | null) => {
@@ -51,32 +52,70 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onFilesSelected, o
         handleFileChange(e.dataTransfer.files);
     }, [onFilesSelected]);
 
-    const uploaderClasses = `flex flex-col items-center justify-center w-full p-4 rounded-lg border-2 border-dashed transition-colors duration-300 cursor-pointer ${isDragging ? 'border-brand-accent bg-brand-light-gray' : 'border-brand-light-gray bg-brand-dark hover:bg-brand-light-gray'}`;
+    const uploaderClasses = `flex flex-col items-center justify-center w-full p-4 rounded-lg border-2 border-dashed transition-colors duration-300 cursor-pointer ${isDragging ? 'border-brand-accent bg-panel-secondary dark:bg-dark-panel-secondary' : 'border-border dark:border-dark-border bg-background dark:bg-dark-background hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary'}`;
     const canUploadMore = images.length < maxFiles;
     const isSingleFileMode = maxFiles === 1;
 
     return (
         <div>
-            <h3 className="text-lg font-medium mb-3 text-brand-text">{title} 
-                {!isSingleFileMode && <span className="text-sm text-brand-text-secondary"> ({images.length}/{maxFiles})</span>}
-            </h3>
+            <div className="flex justify-between items-start mb-3">
+                <div>
+                     <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-lg font-medium text-text-primary dark:text-dark-text-primary">{title}</h3>
+                        {tooltipText && (
+                            <div className="relative group">
+                                <button className="text-sky-500 transition-colors" aria-label="More information">
+                                    <InfoIcon className="w-6 h-6" />
+                                </button>
+                                <div className="absolute bottom-full right-0 mb-2 w-72 bg-sky-500 text-white text-sm rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                                    {tooltipText}
+                                    <div className="absolute right-4 -bottom-1 w-2 h-2 bg-sky-500 transform rotate-45"></div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                     {secondaryTitle ? (
+                        <p className="text-sm font-medium text-brand-accent">{secondaryTitle}</p>
+                     ) : (
+                         <p className="text-sm font-medium text-brand-accent">Upload Up To {maxFiles} Images</p>
+                     )}
+                </div>
+                {isSingleFileMode && onEdit && images.length > 0 && (
+                    <button onClick={onEdit} className="flex items-center gap-2 text-sm font-semibold text-brand-accent hover:underline flex-shrink-0 ml-4">
+                        <PencilIcon className="w-4 h-4" />
+                        Edit
+                    </button>
+                )}
+            </div>
+
             {images.length > 0 && (
                 <div className={`grid gap-2 mb-2 ${isSingleFileMode ? 'grid-cols-1' : 'grid-cols-4'}`}>
                     {images.map((image, index) => (
-                        <div key={index} className={`relative group ${isSingleFileMode ? 'aspect-video bg-brand-dark rounded-lg' : 'aspect-square'}`}>
+                        <div key={index} className={`relative group ${isSingleFileMode ? 'aspect-video bg-background dark:bg-dark-background rounded-lg' : 'aspect-square'}`}>
                             <img src={image.preview} alt={`preview ${index}`} className="w-full h-full object-contain rounded-md" />
-                            <button 
-                                onClick={() => onRemove(index)} 
-                                className="absolute top-1 right-1 bg-black bg-opacity-60 rounded-full p-1 text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                aria-label="Remove image"
-                            >
-                                <TrashIcon className="w-4 h-4" />
-                            </button>
+                            {isSingleFileMode && maskImage && (
+                                <img src={maskImage} alt="mask preview" className="absolute inset-0 w-full h-full object-contain opacity-50 pointer-events-none" />
+                            )}
+                            <div className="absolute top-1 right-1 flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                    onClick={() => onRemove(index)} 
+                                    className="bg-black bg-opacity-60 rounded-full p-1 text-white hover:bg-red-500"
+                                    aria-label="Remove image"
+                                >
+                                    <TrashIcon className="w-4 h-4" />
+                                </button>
+                            </div>
                         </div>
                     ))}
                 </div>
             )}
             
+            {maskImage && isSingleFileMode && onClearMask && (
+                 <button onClick={onClearMask} className="w-full text-center text-sm text-red-400 hover:underline mb-2">
+                    Clear Mask
+                </button>
+            )}
+
             {canUploadMore && (
                 <label
                     htmlFor={id}
@@ -88,10 +127,10 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onFilesSelected, o
                 >
                     <div className="flex flex-col items-center justify-center text-center">
                         <UploadIcon className="w-8 h-8 mb-2" />
-                        <p className="font-semibold text-brand-text text-sm">
+                        <p className="font-semibold text-text-primary dark:text-dark-text-primary text-sm">
                             {isSingleFileMode && images.length === 0 ? 'Upload Image' : 'Add Images'}
                         </p>
-                         <p className="text-xs text-brand-text-secondary">
+                         <p className="text-xs text-text-secondary dark:text-dark-text-secondary">
                             Drag & drop or{' '}
                             <span className="font-semibold text-brand-accent">choose files</span>
                         </p>

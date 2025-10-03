@@ -8,6 +8,7 @@ import { CopyIcon } from './icons/CopyIcon';
 import { StarIcon } from './icons/StarIcon';
 import { UpscaleIcon } from './icons/UpscaleIcon';
 import { UpscalePopover } from './UpscalePopover';
+import { DownloadPopover } from './DownloadPopover';
 
 interface LightboxProps {
     state: {
@@ -18,7 +19,7 @@ interface LightboxProps {
     onUseAsBase: (src: string) => void;
     onEdit: (src: string) => void;
     onTweak: (index: number) => void;
-    onDownload: (item: HistoryItem) => void;
+    onDownload: (item: HistoryItem, type: 'with-details' | 'image-only') => void;
     onToggleFavorite: (item: HistoryItem) => void;
     favoriteIds: Set<string>;
     onUpscale: (item: HistoryItem, level: string) => void;
@@ -217,9 +218,14 @@ export const Lightbox: React.FC<LightboxProps> = ({ state, onClose, onUseAsBase,
                                             <TweakIcon className="w-4 h-4" /> Tweak
                                         </button>
                                     )}
-                                    <button onClick={() => onDownload(item)} className="flex items-center gap-2 text-sm font-semibold py-2 px-4 rounded-lg bg-panel dark:bg-dark-panel hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors">
-                                        <DownloadIcon className="w-4 h-4" /> Download
-                                    </button>
+                                    <DownloadPopover onSelect={(type) => onDownload(item, type)} popoverDirection="top">
+                                        <button 
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="flex items-center gap-2 text-sm font-semibold py-2 px-4 rounded-lg bg-panel dark:bg-dark-panel hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors"
+                                        >
+                                            <DownloadIcon className="w-4 h-4" /> Download
+                                        </button>
+                                    </DownloadPopover>
                                 </div>
                             </div>
                         </div>

@@ -9,6 +9,7 @@ import { ExportIcon } from './icons/ExportIcon';
 import { StarIcon } from './icons/StarIcon';
 import { UpscaleIcon } from './icons/UpscaleIcon';
 import { UpscalePopover } from './UpscalePopover';
+import { DownloadPopover } from './DownloadPopover';
 
 interface HistoryProps {
     items: HistoryItem[];
@@ -16,7 +17,7 @@ interface HistoryProps {
     onDelete: (id: string) => void;
     onUseAsBase: (src: string) => void;
     onEdit: (src: string) => void;
-    onDownload: (item: HistoryItem) => void;
+    onDownload: (item: HistoryItem, type: 'with-details' | 'image-only') => void;
     onRestoreHistory: (items: HistoryItem[]) => void;
     onToggleFavorite: (item: HistoryItem) => void;
     favoriteIds: Set<string>;
@@ -144,7 +145,11 @@ export const History: React.FC<HistoryProps> = ({ items, onImageClick, onDelete,
                                                 </button>
                                             </UpscalePopover>
                                             <button onClick={(e) => { e.stopPropagation(); onEdit(item.image); }} className="p-2 rounded-full bg-panel/90 dark:bg-dark-panel/90 backdrop-blur-sm hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors" title="Edit"><PencilIcon className="w-4 h-4" /></button>
-                                            <button onClick={(e) => { e.stopPropagation(); onDownload(item); }} className="p-2 rounded-full bg-panel/90 dark:bg-dark-panel/90 backdrop-blur-sm hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors" title="Download"><DownloadIcon className="w-4 h-4" /></button>
+                                            <DownloadPopover onSelect={(type) => onDownload(item, type)}>
+                                                <button onClick={(e) => { e.stopPropagation(); }} className="p-2 rounded-full bg-panel/90 dark:bg-dark-panel/90 backdrop-blur-sm hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors" title="Download">
+                                                    <DownloadIcon className="w-4 h-4" />
+                                                </button>
+                                            </DownloadPopover>
                                             <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }} className="p-2 rounded-full bg-red-500/80 backdrop-blur-sm hover:bg-red-600/90 text-white transition-colors" title="Delete"><TrashIcon className="w-4 h-4" /></button>
                                         </div>
                                     </div>

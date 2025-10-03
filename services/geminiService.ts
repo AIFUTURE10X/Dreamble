@@ -1,3 +1,5 @@
+
+
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import type { ImageFile } from '../types';
 import { fileToBase64 } from './imageService';
@@ -22,8 +24,7 @@ interface CreativeConcept {
 
 export const generateDetailedPrompts = async (
     ai: GoogleGenAI,
-    config: PromptGenerationConfig,
-    seed?: number
+    config: PromptGenerationConfig
 ): Promise<CreativeConcept> => {
     const { sceneDescription, negativePrompt, baseImage, referenceImages, lighting, aspectRatio, cameraPerspective, numberOfImages, imageSize, isPreciseReference } = config;
 
@@ -111,7 +112,6 @@ Then, generate ${numberOfImages} numbered "Variations". Each variation must be a
         model: 'gemini-2.5-flash',
         contents: { parts: promptParts },
         config: {
-            seed,
             responseMimeType: "application/json",
             responseSchema: {
                 type: Type.OBJECT,
@@ -155,54 +155,51 @@ export const editProductImage = async (
     productImage: { mimeType: string; data: string },
     prompt: string,
     negativePrompt: string,
-    seed?: number,
     maskImage?: { mimeType: string; data: string } | null
 ): Promise<string> => {
     
-    const negativePromptInstruction = negativePrompt.trim()
-        ? `\n\n**IMPORTANT: AVOID THE FOLLOWING:** Do not include any elements described here: "${negativePrompt}"`
+    const combinedNegativePrompt = ['watermarks', 'text', 'logos', negativePrompt.trim()].filter(Boolean).join(', ');
+        
+    const negativePromptInstruction = combinedNegativePrompt.trim()
+        ? `4.  **Negative Prompt (AVOID THESE):** "${combinedNegativePrompt}"`
         : '';
         
-    let finalPrompt: string;
-    // FIX: Explicitly type `parts` to allow both `inlineData` and `text` parts.
-    // TypeScript's type inference was too narrow, causing an error when trying to push a `text` part.
-    const parts: ({ inlineData: { mimeType: string; data: string; } } | { text: string })[] = [{ inlineData: productImage }];
+    const finalPrompt = `You are an expert AI photo editor specializing in seamless outpainting and in-painting.
 
-    if (maskImage) {
-        // In-painting mode
-        finalPrompt = `You are an expert AI image editor performing an in-painting task. The user has provided a base image, a mask, and a text prompt.
-Your task is to generate a new image where ONLY the area indicated by the mask is modified according to the user's prompt. The rest of the image must remain completely unchanged.
-Ensure the generated content within the mask blends seamlessly with the surrounding, un-masked area, matching lighting, shadows, textures, and perspective.
+**Your Task:**
+Modify the provided 'Base Image' according to the 'Mask' and 'User Prompt'.
 
-The user's prompt for the masked area is: "${prompt}"
+**Analysis of Inputs:**
+1.  **Base Image:** The starting photograph.
+2.  **Mask Image:** A black-and-white map.
+    *   **BLACK Area:** This is the protected region. You MUST preserve this area perfectly, without any changes.
+    *   **WHITE Area:** This is the editing region. You must generate new content here.
+3.  **User Prompt:** "${prompt}"
 ${negativePromptInstruction}
 
-Generate only the final, edited image.`;
-        parts.push({ inlineData: maskImage }); // Add mask as the second image part
-        parts.push({ text: finalPrompt }); // Add text prompt
-    } else {
-        // Regular editing/background replacement mode
-        finalPrompt = `You are an expert AI image editor. A user has provided a base image and a text prompt. Your task is to generate a new image based on their request. Analyze the user's prompt to understand their intent:
+**Critical Instructions:**
+-   **Seamless Extension:** Your primary goal is to realistically and seamlessly EXTEND the scene from the Base Image into the WHITE areas of the mask. The transition must be invisible. Match lighting, shadows, perspective, textures, and overall mood.
+-   **NO Mirroring or Repeating:** Do NOT simply mirror, repeat, or tile patterns from the edges of the original image. Generate new, coherent content that logically continues the scene.
+-   **NO Borders or Frames:** The output must be a single, complete image. Do not add any black bars, white borders, frames, or letterboxing.
+-   **Strict Dimension Matching:** The final output image MUST have the exact same dimensions (width and height) as the input Base Image. Do not crop, resize, or change the aspect ratio.
 
-1.  **Background Replacement:** If the prompt describes a scene, environment, or background (e.g., "on a wooden table," "in a futuristic city"), your goal is to place the subject from the base image into that new background. Ensure seamless integration, matching lighting, shadows, and perspective. The subject itself should not be altered.
+Based on these instructions, generate the final edited image.`;
 
-2.  **Direct Image Editing/Recreation:** If the prompt asks to modify the subject itself (e.g., "change the color to red," "make this a cartoon," "recreate this as a logo/icon"), your goal is to apply that modification directly to the base image.
-
-Your primary instruction is to follow the user's prompt precisely.
-
-The user's prompt is: "${prompt}"
-${negativePromptInstruction}
-
-Generate only the final image based on this instruction.`;
-        parts.push({ text: finalPrompt }); // Add text prompt
+    if (!maskImage) {
+        // This should ideally not be reached if the app logic is correct, as a mask is always generated for outpainting.
+        throw new Error("A mask must be provided to edit an image. This indicates a logic error in the calling code.");
     }
 
+    const parts: ({ inlineData: { mimeType: string; data: string; } } | { text: string })[] = [
+        { inlineData: productImage },
+        { inlineData: maskImage },
+        { text: finalPrompt },
+    ];
 
     const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image-preview',
+        model: 'gemini-2.5-flash-image',
         contents: { parts },
         config: {
-            seed,
             responseModalities: [Modality.IMAGE, Modality.TEXT],
         },
     });
@@ -258,20 +255,24 @@ export const generateImageFromText = async (
     ai: GoogleGenAI,
     prompt: string,
     aspectRatio: string,
-    negativePrompt: string,
-    seed?: number
+    negativePrompt: string
 ): Promise<string> => {
     const mappedAspectRatio = mapAspectRatioForImagen(aspectRatio);
     
+    const combinedNegativePrompt = ['watermarks', 'text', 'logos', negativePrompt.trim()].filter(Boolean).join(', ');
+    
+    let finalPrompt = prompt;
+    if (combinedNegativePrompt) {
+        finalPrompt = `${prompt}. Do not include: ${combinedNegativePrompt}`;
+    }
+
     const response = await ai.models.generateImages({
-        model: 'imagen-4.0-generate-01',
-        prompt: prompt,
+        model: 'imagen-4.0-generate-001',
+        prompt: finalPrompt,
         config: {
-            seed,
             numberOfImages: 1,
             outputMimeType: 'image/png',
             aspectRatio: mappedAspectRatio,
-            negativePrompt: negativePrompt,
         },
     });
 
@@ -302,15 +303,19 @@ export const upscaleImage = async (
     
     const prompt = `You are an expert digital artist specializing in ultra-high-resolution remastering. Your task is to upscale the provided image to ${resolutionText}, making it incredibly sharp and detailed.
 
-Your goal is to make the image look as if it were natively captured at this higher resolution. Intelligently add fine-grained, plausible details where the original is blurry or soft. Sharpen key edges without creating harsh halos, refine textures (like skin, fabric, wood, metal), and enhance the subtle nuances in lighting and shadows.
+Your goal is to make the image look as if it were originally captured with a high-end professional camera. Enhance details, textures, and clarity without introducing artificial artifacts. The final output must be just the upscaled image, with no text, watermarks, logos, or other modifications.`;
 
-**Crucially, you must strictly preserve the original art style, composition, subjects, and overall color palette.** Do not add, remove, or change any objects or characters. The final output must be a stunningly crisp and detailed version of the exact same image.`;
-    
-    const parts = [ imagePart, { text: prompt } ];
-
+// FIX: The function was incomplete and did not call the API or return a value.
+// Completed the function to call the Gemini API for image generation,
+// process the response, and return the upscaled image data.
     const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image-preview',
-        contents: { parts },
+        model: 'gemini-2.5-flash-image',
+        contents: {
+            parts: [
+                imagePart,
+                { text: prompt }
+            ]
+        },
         config: {
             responseModalities: [Modality.IMAGE, Modality.TEXT],
         },

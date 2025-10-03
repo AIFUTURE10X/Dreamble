@@ -2,6 +2,8 @@
 export interface ImageFile {
   file: File;
   preview: string;
+  width?: number;
+  height?: number;
 }
 
 export interface HistoryItem {

@@ -6,13 +6,14 @@ import { DownloadIcon } from './icons/DownloadIcon';
 import { StarIcon } from './icons/StarIcon';
 import { UpscaleIcon } from './icons/UpscaleIcon';
 import { UpscalePopover } from './UpscalePopover';
+import { DownloadPopover } from './DownloadPopover';
 
 interface FavoritesProps {
     items: HistoryItem[];
     onImageClick: (item: HistoryItem) => void;
     onUseAsBase: (src: string) => void;
     onEdit: (src: string) => void;
-    onDownload: (item: HistoryItem) => void;
+    onDownload: (item: HistoryItem, type: 'with-details' | 'image-only') => void;
     onToggleFavorite: (item: HistoryItem) => void;
     onUpscale: (item: HistoryItem, level: string) => void;
     upscalingId: string | null;
@@ -60,7 +61,11 @@ export const Favorites: React.FC<FavoritesProps> = ({ items, onImageClick, onUse
                                                 </button>
                                             </UpscalePopover>
                                             <button onClick={(e) => { e.stopPropagation(); onEdit(item.image); }} className="p-2 rounded-full bg-panel/90 dark:bg-dark-panel/90 backdrop-blur-sm hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors" title="Edit"><PencilIcon className="w-4 h-4" /></button>
-                                            <button onClick={(e) => { e.stopPropagation(); onDownload(item); }} className="p-2 rounded-full bg-panel/90 dark:bg-dark-panel/90 backdrop-blur-sm hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors" title="Download"><DownloadIcon className="w-4 h-4" /></button>
+                                            <DownloadPopover onSelect={(type) => onDownload(item, type)}>
+                                                <button onClick={(e) => { e.stopPropagation(); }} className="p-2 rounded-full bg-panel/90 dark:bg-dark-panel/90 backdrop-blur-sm hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors" title="Download">
+                                                    <DownloadIcon className="w-4 h-4" />
+                                                </button>
+                                            </DownloadPopover>
                                         </div>
                                     </div>
                                 </div>

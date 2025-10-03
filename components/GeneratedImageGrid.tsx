@@ -7,23 +7,23 @@ import { DownloadIcon } from './icons/DownloadIcon';
 import { StarIcon } from './icons/StarIcon';
 import { UpscaleIcon } from './icons/UpscaleIcon';
 import { UpscalePopover } from './UpscalePopover';
+import { DownloadPopover } from './DownloadPopover';
 
 
 interface GeneratedImageGridProps {
     images: GeneratedImage[];
-    onReset: () => void;
     onImageClick: (image: GeneratedImage, index: number) => void;
     onUseAsBase: (src: string) => void;
     onEdit: (src: string) => void;
     onTweak: (index: number) => void;
-    onDownload: (image: GeneratedImage) => void;
+    onDownload: (image: GeneratedImage, type: 'with-details' | 'image-only') => void;
     onToggleFavorite: (item: GeneratedImage) => void;
     favoriteIds: Set<string>;
     onUpscale: (image: GeneratedImage, level: string) => void;
     upscalingId: string | null;
 }
 
-export const GeneratedImageGrid: React.FC<GeneratedImageGridProps> = ({ images, onReset, onImageClick, onUseAsBase, onEdit, onTweak, onDownload, onToggleFavorite, favoriteIds, onUpscale, upscalingId }) => {
+export const GeneratedImageGrid: React.FC<GeneratedImageGridProps> = ({ images, onImageClick, onUseAsBase, onEdit, onTweak, onDownload, onToggleFavorite, favoriteIds, onUpscale, upscalingId }) => {
     const isSingleImage = images.length === 1;
 
     const renderImage = (image: GeneratedImage, index: number) => {
@@ -32,13 +32,14 @@ export const GeneratedImageGrid: React.FC<GeneratedImageGridProps> = ({ images, 
         return (
             <div 
                 key={index} 
-                className="relative group cursor-pointer aspect-square flex items-center justify-center bg-background dark:bg-dark-background rounded-lg overflow-hidden" 
+                className="relative group cursor-pointer flex items-center justify-center bg-background dark:bg-dark-background rounded-lg overflow-hidden" 
+                style={{ aspectRatio: `${image.width} / ${image.height}` }}
                 onClick={() => onImageClick(image, index)}
             >
                 <img 
                     src={image.src} 
                     alt={`Generated scene ${index + 1}`} 
-                    className="max-w-full max-h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/60 transition-colors flex items-center justify-center p-4">
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity flex flex-wrap items-center justify-center gap-2">
@@ -74,9 +75,14 @@ export const GeneratedImageGrid: React.FC<GeneratedImageGridProps> = ({ images, 
                                 {isUpscaling ? 'Upscaling...' : 'Upscale'}
                             </button>
                         </UpscalePopover>
-                        <button onClick={(e) => { e.stopPropagation(); onDownload(image); }} className="flex items-center gap-2 text-sm font-semibold py-2 px-3 rounded-md bg-panel/90 dark:bg-dark-panel/90 backdrop-blur-sm hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors">
-                            <DownloadIcon className="w-4 h-4" /> Download
-                        </button>
+                        <DownloadPopover onSelect={(type) => onDownload(image, type)}>
+                            <button 
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex items-center gap-2 text-sm font-semibold py-2 px-3 rounded-md bg-panel/90 dark:bg-dark-panel/90 backdrop-blur-sm hover:bg-panel-secondary dark:hover:bg-dark-panel-secondary text-text-primary dark:text-dark-text-primary transition-colors"
+                            >
+                                <DownloadIcon className="w-4 h-4" /> Download
+                            </button>
+                        </DownloadPopover>
                     </div>
                 </div>
             </div>
@@ -84,24 +90,18 @@ export const GeneratedImageGrid: React.FC<GeneratedImageGridProps> = ({ images, 
     };
 
     return (
-        <div className="flex flex-col gap-4 h-full border-4 border-brand-accent rounded-lg">
+        <div className="flex flex-col gap-4 flex-grow border-4 border-brand-accent rounded-lg">
             <div className={`relative bg-panel dark:bg-dark-panel rounded-lg flex-grow p-4`}>
                 {isSingleImage ? (
                     <div className="w-full h-full">
                         {renderImage(images[0], 0)}
                     </div>
                 ) : (
-                    <div className="grid grid-cols-2 gap-4 h-full">
+                    <div className="grid grid-cols-2 gap-4">
                         {images.map(renderImage)}
                     </div>
                 )}
             </div>
-            <button
-                onClick={onReset}
-                className="w-full bg-brand-accent hover:bg-brand-accent-hover text-white font-bold py-3 px-6 rounded-lg transition duration-300"
-            >
-                Start Over
-            </button>
         </div>
     );
 };

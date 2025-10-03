@@ -102,7 +102,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onFilesSelected, o
             {images.length > 0 && (
                 <div className={`grid gap-2 mb-2 ${isSingleFileMode ? 'grid-cols-1' : 'grid-cols-4'}`}>
                     {images.map((image, index) => (
-                        <div key={index} className={`relative group ${isSingleFileMode ? 'aspect-video bg-background dark:bg-dark-background rounded-lg' : 'aspect-square'}`}>
+                        <div key={index} className={`relative group ${isSingleFileMode ? 'aspect-square bg-background dark:bg-dark-background rounded-lg' : 'aspect-square'}`}>
                             <img src={image.preview} alt={`preview ${index}`} className="w-full h-full object-contain rounded-md" />
                             {isSingleFileMode && maskImage && (
                                 <img src={maskImage} alt="mask preview" className="absolute inset-0 w-full h-full object-contain opacity-50 pointer-events-none" />

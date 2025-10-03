@@ -1,4 +1,6 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+
+
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { ImageUploader } from './components/ImageUploader';
 import { SelectInput } from './components/SelectInput';
@@ -18,7 +20,7 @@ import { ThemeToggle } from './components/ThemeToggle';
 import { HistoryIcon } from './components/icons/HistoryIcon';
 import { StarIcon } from './components/icons/StarIcon';
 import { LIGHTING_OPTIONS, ASPECT_RATIO_OPTIONS, CAMERA_PERSPECTIVE_OPTIONS, STYLE_TAXONOMY, NUMBER_OF_IMAGES_OPTIONS, IMAGE_SIZE_OPTIONS, UPSCALE_OPTIONS } from './constants';
-import { resizeImageWithPadding, base64ToFile, resizeBase64Image, resizeAndPadMask } from './services/imageService';
+import { resizeImageWithPadding, base64ToFile, resizeBase64Image, resizeAndPadMask, cropBase64ImageToAspectRatio, createMaskFromTransparency, makePaddedImageOpaque } from './services/imageService';
 import { generateDetailedPrompts, editProductImage, generateImageFromText, upscaleImage } from './services/geminiService';
 import { getAllHistoryItems, addHistoryItems, deleteHistoryItem, replaceAllHistory, getAllFavorites, getFavoriteIds, addFavorite, removeFavorite } from './services/dbService';
 import type { ImageFile, HistoryItem, GeneratedImage } from './types';
@@ -33,6 +35,34 @@ interface LightboxState {
     tweakIndex?: number;
 }
 
+const getPromptWithOutpaintInstruction = (
+    prompt: string, 
+    sourceImage: { width?: number; height?: number } | null, 
+    targetAspectRatio: string
+): string => {
+    const instructionRegex = / \(CRITICAL INSTRUCTION: outpaint to a .*? aspect ratio\)/g;
+    const cleanPrompt = prompt.replace(instructionRegex, '');
+
+    if (!sourceImage || !sourceImage.width || !sourceImage.height) {
+        return cleanPrompt;
+    }
+
+    const sourceRatio = sourceImage.width / sourceImage.height;
+    
+    const ratioParts = targetAspectRatio.split(' ')[0].split(':').map(Number);
+    if (ratioParts.length !== 2 || isNaN(ratioParts[0]) || isNaN(ratioParts[1]) || ratioParts[1] === 0) {
+        return cleanPrompt;
+    }
+    const targetRatio = ratioParts[0] / ratioParts[1];
+
+    if (Math.abs(sourceRatio - targetRatio) > 0.01) {
+        const targetLabel = targetAspectRatio.split(' ')[0];
+        const instruction = ` (CRITICAL INSTRUCTION: outpaint to a ${targetLabel} aspect ratio)`;
+        return `${cleanPrompt}${instruction}`;
+    }
+
+    return cleanPrompt;
+};
 
 const geminiApiKey = process.env.API_KEY;
 
@@ -105,7 +135,7 @@ const App: React.FC = () => {
     const [imageToEdit, setImageToEdit] = useState<string | null>(null);
     const [maskImage, setMaskImage] = useState<string | null>(null);
     const [upscalingId, setUpscalingId] = useState<string | null>(null);
-
+    const [isHoveringImagePanel, setIsHoveringImagePanel] = useState(false);
 
     const isGeneratingRef = useRef(false);
 
@@ -126,6 +156,26 @@ const App: React.FC = () => {
             setFavorites([]);
         });
     }, []);
+
+    const allRatioLabels = useMemo(() => {
+        return new Set(ASPECT_RATIO_OPTIONS.flatMap(g => g.options).map(o => o.label));
+    }, []);
+
+    useEffect(() => {
+        if (baseImage) {
+            // Only update the scene description if it's empty or already contains just a ratio label
+            if (sceneDescription.trim() === '' || allRatioLabels.has(sceneDescription.trim())) {
+                 const selectedOption = ASPECT_RATIO_OPTIONS.flatMap(g => g.options).find(o => o.value === aspectRatio);
+                 const ratioLabel = selectedOption ? selectedOption.label : aspectRatio;
+                 setSceneDescription(ratioLabel);
+            }
+        } else {
+            // When base image is removed, if the scene description was just an aspect ratio label, clear it.
+            if (allRatioLabels.has(sceneDescription.trim())) {
+                setSceneDescription('');
+            }
+        }
+    }, [aspectRatio, baseImage, sceneDescription, allRatioLabels]);
 
     if (!geminiApiKey) {
         return (
@@ -207,8 +257,18 @@ const App: React.FC = () => {
             if (baseImage) {
                 URL.revokeObjectURL(baseImage.preview);
             }
-            setBaseImage({ file, preview: URL.createObjectURL(file) });
-            setMaskImage(null); // Clear mask when a new base image is uploaded
+            const previewUrl = URL.createObjectURL(file);
+            const image = new Image();
+            image.src = previewUrl;
+            image.onload = () => {
+                setBaseImage({ 
+                    file, 
+                    preview: previewUrl, 
+                    width: image.naturalWidth, 
+                    height: image.naturalHeight 
+                });
+            };
+            setMaskImage(null);
         }
     };
 
@@ -247,15 +307,6 @@ const App: React.FC = () => {
         referenceImages.forEach(img => URL.revokeObjectURL(img.preview));
         setReferenceImages([]);
     };
-
-    const getSeed = (): number => {
-        if (isSeedLocked) {
-            const parsedSeed = parseInt(seed, 10);
-            if (!isNaN(parsedSeed)) return parsedSeed;
-        }
-        // If unlocked, or if the locked seed is invalid, always return a new random seed.
-        return Math.floor(Math.random() * 2147483647);
-    };
     
     const handleLockToggle = () => {
         const newLockedState = !isSeedLocked;
@@ -277,10 +328,9 @@ const App: React.FC = () => {
         setError(null);
         setDetailedPrompts(null);
         try {
-            const seedToUse = getSeed();
-
+            const finalSceneDescription = getPromptWithOutpaintInstruction(sceneDescription, baseImage, aspectRatio);
             const prompts = await generateDetailedPrompts(ai, {
-                sceneDescription,
+                sceneDescription: finalSceneDescription,
                 negativePrompt,
                 baseImage,
                 referenceImages,
@@ -290,7 +340,7 @@ const App: React.FC = () => {
                 numberOfImages: parseInt(numberOfImages, 10),
                 imageSize,
                 isPreciseReference,
-            }, seedToUse);
+            });
             setDetailedPrompts(prompts);
         } catch (err) {
             handleApiError(err);
@@ -298,10 +348,68 @@ const App: React.FC = () => {
             setIsLoading(false);
             isGeneratingRef.current = false;
         }
-    }, [ai, sceneDescription, negativePrompt, baseImage, referenceImages, lighting, aspectRatio, cameraPerspective, numberOfImages, imageSize, seed, isSeedLocked, isPreciseReference]);
+    }, [ai, sceneDescription, negativePrompt, baseImage, referenceImages, lighting, aspectRatio, cameraPerspective, numberOfImages, imageSize, isPreciseReference]);
     
     const handleGenerateImages = useCallback(async () => {
         if (isGeneratingRef.current) return;
+
+        // Handle direct import of base image
+        if (baseImage && !detailedPrompts && sceneDescription.trim() === '') {
+            isGeneratingRef.current = true;
+            setIsLoading(true);
+            setLoadingMessage('Importing image...');
+            setError(null);
+            setGeneratedImages([]);
+    
+            try {
+                const fileToDataUrl = (file: File): Promise<string> => {
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.readAsDataURL(file);
+                        reader.onload = () => resolve(reader.result as string);
+                        reader.onerror = (error) => reject(error);
+                    });
+                };
+                
+                const imageUrl = await fileToDataUrl(baseImage.file);
+                
+                const img = new Image();
+                img.src = imageUrl;
+                await new Promise(resolve => { img.onload = resolve });
+    
+                const itemId = `local-${Date.now()}-imported`;
+                const importedImage: GeneratedImage = {
+                    id: itemId,
+                    src: imageUrl,
+                    width: img.naturalWidth,
+                    height: img.naturalHeight,
+                    prompt: 'Imported from base image',
+                    negativePrompt: '',
+                    seed: undefined,
+                };
+    
+                const historyItem: HistoryItem = {
+                    id: itemId,
+                    image: imageUrl,
+                    prompt: 'Imported from base image',
+                    negativePrompt: '',
+                    createdAt: Date.now(),
+                    seed: undefined,
+                };
+    
+                setGeneratedImages([importedImage]);
+                await addHistoryItems([historyItem]);
+                const updatedHistory = await getAllHistoryItems();
+                setHistory(updatedHistory);
+    
+            } catch (err) {
+                handleApiError(err);
+            } finally {
+                setIsLoading(false);
+                isGeneratingRef.current = false;
+            }
+            return; 
+        }
         
         if (!detailedPrompts && sceneDescription.trim() === '') {
             setError('Please describe a scene or generate a creative concept first.');
@@ -317,56 +425,75 @@ const App: React.FC = () => {
             const newHistoryItems: HistoryItem[] = [];
             
             const processImage = async (prompt: string, index: number): Promise<GeneratedImage> => {
-                const seedToUse = getSeed();
                 let newImageBase64: string;
+                
                 if (baseImage) {
                     const resizedProduct = await resizeImageWithPadding(baseImage.file, aspectRatio);
-                    const resizedMask = maskImage ? await resizeAndPadMask(maskImage, aspectRatio) : null;
-                    newImageBase64 = await editProductImage(ai, resizedProduct, prompt, negativePrompt, seedToUse, resizedMask);
+                    
+                    let finalMaskForEditing: { mimeType: string; data: string } | null = null;
+                    if (maskImage) { // User provided mask for in-painting
+                        finalMaskForEditing = await resizeAndPadMask(maskImage, aspectRatio);
+                    } else { // No user mask, so we are outpainting. Generate a mask from transparency.
+                        finalMaskForEditing = await createMaskFromTransparency(resizedProduct);
+                    }
+
+                    const opaqueProduct = await makePaddedImageOpaque(resizedProduct);
+                    const editedImageBase64 = await editProductImage(ai, opaqueProduct, prompt, negativePrompt, finalMaskForEditing);
+
+                    // The editing model may return a square image. Crop it to the target aspect ratio.
+                    newImageBase64 = await cropBase64ImageToAspectRatio(editedImageBase64, aspectRatio);
                 } else {
-                    newImageBase64 = await generateImageFromText(ai, prompt, aspectRatio, negativePrompt, seedToUse);
+                    newImageBase64 = await generateImageFromText(ai, prompt, aspectRatio, negativePrompt);
                 }
                 
-                let width: number, height: number;
+                const imageUrl = `data:image/png;base64,${newImageBase64}`;
+
+                // Load image to get its actual dimensions
+                const img = new Image();
+                const loadPromise = new Promise<void>((resolve) => {
+                    img.onload = () => resolve();
+                });
+                img.src = imageUrl;
+                await loadPromise;
+                
+                let width = img.naturalWidth;
+                let height = img.naturalHeight;
                 let finalImageBase64 = newImageBase64;
 
                 if (imageSize !== 'auto') {
-                    [width, height] = imageSize.split('x').map(Number);
-                    if (!isNaN(width) && !isNaN(height)) {
-                        setLoadingMessage(`Resizing image to ${width}x${height}...`);
-                        finalImageBase64 = await resizeBase64Image(newImageBase64, width, height);
-                    }
-                } else {
-                    const ratioParts = aspectRatio.split(' ')[0].split(':').map(Number);
-                    const ratio = ratioParts[0] / ratioParts[1];
-                    if (ratio >= 1) { // landscape or square
-                        width = 1024;
-                        height = Math.round(1024 / ratio);
-                    } else { // portrait
-                        height = 1024;
-                        width = Math.round(1024 * ratio);
+                    const [targetWidth, targetHeight] = imageSize.split('x').map(Number);
+                     if (!isNaN(targetWidth) && !isNaN(targetHeight)) {
+                        setLoadingMessage(`Resizing image to ${targetWidth}x${targetHeight}...`);
+                        finalImageBase64 = await resizeBase64Image(newImageBase64, targetWidth, targetHeight);
+                        width = targetWidth;
+                        height = targetHeight;
                     }
                 }
 
-
-                const imageUrl = `data:image/png;base64,${finalImageBase64}`;
+                const finalImageUrl = `data:image/png;base64,${finalImageBase64}`;
                 const itemId = `local-${Date.now()}-${index}`;
                 newHistoryItems.push({ 
                     id: itemId, 
-                    image: imageUrl, 
+                    image: finalImageUrl, 
                     prompt: prompt,
                     negativePrompt: negativePrompt,
                     createdAt: Date.now(),
-                    seed: seedToUse
+                    seed: undefined
                 });
-                return { id: itemId, src: imageUrl, width, height, prompt, negativePrompt, seed: seedToUse };
+                return { id: itemId, src: finalImageUrl, width, height, prompt, negativePrompt, seed: undefined };
             };
             
             if (detailedPrompts) {
                 const variations = detailedPrompts.variations;
                 for (const [index, variation] of variations.entries()) {
                     setLoadingMessage(`Generating image ${index + 1} of ${variations.length}...`);
-                    const fullPrompt = `${detailedPrompts.creativeConcept}. ${variation}`;
+                    let fullPrompt = `${detailedPrompts.creativeConcept}. ${variation}`;
+                    
+                    // Add outpainting instruction only if a base image exists
+                    if (baseImage) {
+                        fullPrompt = getPromptWithOutpaintInstruction(fullPrompt, baseImage, aspectRatio);
+                    }
+
                     const imageObject = await processImage(fullPrompt, index);
                     setGeneratedImages(prev => [...prev, imageObject]);
 
@@ -376,10 +503,11 @@ const App: React.FC = () => {
                     }
                 }
             } else if (sceneDescription.trim() !== '') {
+                const finalSceneDescription = getPromptWithOutpaintInstruction(sceneDescription, baseImage, aspectRatio);
                 const numImages = parseInt(numberOfImages, 10);
                 for (let i = 0; i < numImages; i++) {
                      setLoadingMessage(`Generating image ${i + 1} of ${numImages}...`);
-                     const imageObject = await processImage(sceneDescription, i);
+                     const imageObject = await processImage(finalSceneDescription, i);
                      setGeneratedImages(prev => [...prev, imageObject]);
                      
                      if (i < numImages - 1) {
@@ -402,7 +530,7 @@ const App: React.FC = () => {
             setIsLoading(false);
             isGeneratingRef.current = false;
         }
-    }, [ai, baseImage, maskImage, detailedPrompts, aspectRatio, imageSize, sceneDescription, negativePrompt, numberOfImages, seed, isSeedLocked]);
+    }, [ai, baseImage, maskImage, detailedPrompts, aspectRatio, imageSize, sceneDescription, negativePrompt, numberOfImages]);
 
     const handleTweakImage = useCallback(async (indexToTweak: number) => {
         if (isGeneratingRef.current) return;
@@ -417,40 +545,46 @@ const App: React.FC = () => {
         setError(null);
 
         try {
-            const seedToUse = getSeed();
-            
             const file = await base64ToFile(imageToTweak.src, 'tweaked.png');
             const resizedProduct = await resizeImageWithPadding(file, aspectRatio);
             
             const promptToUse = imageToTweak.prompt;
-            const fullPromptForTweak = `${promptToUse} (new variation, different style)`;
+            let fullPromptForTweak = `${promptToUse} (new variation, different style)`;
 
-            const newImageBase64 = await editProductImage(ai, resizedProduct, fullPromptForTweak, negativePrompt, seedToUse, null);
+            fullPromptForTweak = getPromptWithOutpaintInstruction(fullPromptForTweak, imageToTweak, aspectRatio);
+
+            const outpaintingMask = await createMaskFromTransparency(resizedProduct);
+            const opaqueProduct = await makePaddedImageOpaque(resizedProduct);
+            const newImageBase64 = await editProductImage(ai, opaqueProduct, fullPromptForTweak, negativePrompt, outpaintingMask);
             
-            let width: number, height: number;
+            const imageUrl = `data:image/png;base64,${newImageBase64}`;
+
+            // Load image to get its actual dimensions
+            const img = new Image();
+            const loadPromise = new Promise<void>((resolve) => {
+                img.onload = () => resolve();
+            });
+            img.src = imageUrl;
+            await loadPromise;
+
+            let width = img.naturalWidth;
+            let height = img.naturalHeight;
             let finalImageBase64 = newImageBase64;
+            
             if (imageSize !== 'auto') {
-                [width, height] = imageSize.split('x').map(Number);
-                if (!isNaN(width) && !isNaN(height)) {
-                    setLoadingMessage(`Resizing tweaked image to ${width}x${height}...`);
-                    finalImageBase64 = await resizeBase64Image(newImageBase64, width, height);
-                }
-            } else {
-                const ratioParts = aspectRatio.split(' ')[0].split(':').map(Number);
-                const ratio = ratioParts[0] / ratioParts[1];
-                 if (ratio >= 1) {
-                    width = 1024;
-                    height = Math.round(1024 / ratio);
-                } else {
-                    height = 1024;
-                    width = Math.round(1024 * ratio);
+                const [targetWidth, targetHeight] = imageSize.split('x').map(Number);
+                 if (!isNaN(targetWidth) && !isNaN(targetHeight)) {
+                    setLoadingMessage(`Resizing tweaked image to ${targetWidth}x${targetHeight}...`);
+                    finalImageBase64 = await resizeBase64Image(newImageBase64, targetWidth, targetHeight);
+                    width = targetWidth;
+                    height = targetHeight;
                 }
             }
-
-            const imageUrl = `data:image/png;base64,${finalImageBase64}`;
+            
+            const finalImageUrl = `data:image/png;base64,${finalImageBase64}`;
             const newId = `local-${Date.now()}`;
-            const newHistoryItem: HistoryItem = { id: newId, image: imageUrl, prompt: fullPromptForTweak, negativePrompt, seed: seedToUse, createdAt: Date.now() };
-            const newImageObject: GeneratedImage = { id: newId, src: imageUrl, width, height, prompt: fullPromptForTweak, negativePrompt, seed: seedToUse };
+            const newHistoryItem: HistoryItem = { id: newId, image: finalImageUrl, prompt: fullPromptForTweak, negativePrompt, seed: undefined, createdAt: Date.now() };
+            const newImageObject: GeneratedImage = { id: newId, src: finalImageUrl, width, height, prompt: fullPromptForTweak, negativePrompt, seed: undefined };
 
             setGeneratedImages(prev => {
                 const newImages = [...prev];
@@ -468,7 +602,7 @@ const App: React.FC = () => {
             setIsLoading(false);
             isGeneratingRef.current = false;
         }
-    }, [ai, generatedImages, aspectRatio, imageSize, negativePrompt, seed, isSeedLocked]);
+    }, [ai, generatedImages, aspectRatio, imageSize, negativePrompt]);
 
     const handleUpscaleImage = useCallback(async (itemToUpscale: HistoryItem | GeneratedImage, upscaleLevel: string) => {
         if (isGeneratingRef.current || upscalingId) return;
@@ -586,7 +720,19 @@ const App: React.FC = () => {
         setMainTab('create');
         try {
             const file = await base64ToFile(imageUrl, `generated-image-${Date.now()}.png`);
-            setBaseImage({ file, preview: imageUrl });
+            
+            const previewUrl = URL.createObjectURL(file);
+            const image = new Image();
+            image.src = previewUrl;
+            image.onload = () => {
+                setBaseImage({ 
+                    file, 
+                    preview: previewUrl, 
+                    width: image.naturalWidth, 
+                    height: image.naturalHeight 
+                });
+            };
+
             window.scrollTo({ top: 0, behavior: 'smooth' });
         } catch (err) {
              setError(err instanceof Error ? err.message : 'Could not use this image.');
@@ -594,9 +740,21 @@ const App: React.FC = () => {
         }
     };
 
-    const handleDownload = (item: GeneratedImage | HistoryItem) => {
+    const handleDownload = (item: GeneratedImage | HistoryItem, type: 'with-details' | 'image-only') => {
         const imageSrc = 'src' in item ? item.src : item.image;
+        const downloadFileName = `generated-scene-${item.seed || Date.now()}.png`;
 
+        if (type === 'image-only') {
+            const link = document.createElement('a');
+            link.href = imageSrc;
+            link.download = downloadFileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            return;
+        }
+
+        // --- type === 'with-details' ---
         const img = new Image();
         img.crossOrigin = 'anonymous';
         img.src = imageSrc;
@@ -685,7 +843,7 @@ const App: React.FC = () => {
             // --- Download ---
             const link = document.createElement('a');
             link.href = canvas.toDataURL('image/png');
-            link.download = `generated-scene-${item.seed || Date.now()}.png`;
+            link.download = downloadFileName;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -796,20 +954,9 @@ const App: React.FC = () => {
         { id: 'favorites', label: 'Favorites', icon: StarIcon }
     ];
 
+    const isResettable = generatedImages.length > 0 || baseImage || referenceImages.length > 0 || sceneDescription.trim() !== '' || negativePrompt.trim() !== '' || seed.trim() !== '';
+
     const controlPanelTabs = [
-        {
-            id: 'prompt',
-            label: <>✍️ <span className="hidden sm:inline">Prompt</span></>,
-            content: (
-                <div className="space-y-4">
-                    <TextAreaInput placeholder="Describe the image you want to create..." value={sceneDescription} onChange={(e) => setSceneDescription(e.target.value)} />
-                    <div>
-                         <label className="block text-sm font-medium text-text-secondary dark:text-dark-text-secondary mb-2">Negative Prompt (Optional)</label>
-                         <TextAreaInput placeholder="e.g., text, watermarks, ugly, deformed, blurry..." value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} />
-                    </div>
-                </div>
-            )
-        },
         {
             id: 'settings',
             label: <>⚙️ <span className="hidden sm:inline">Settings</span></>,
@@ -864,6 +1011,19 @@ const App: React.FC = () => {
             )
         },
         {
+            id: 'prompt',
+            label: <>✍️ <span className="hidden sm:inline">Prompt</span></>,
+            content: (
+                <div className="space-y-4">
+                    <TextAreaInput placeholder="Describe the image you want to create..." value={sceneDescription} onChange={(e) => setSceneDescription(e.target.value)} />
+                    <div>
+                         <label className="block text-sm font-medium text-text-secondary dark:text-dark-text-secondary mb-2">Negative Prompt (Optional)</label>
+                         <TextAreaInput placeholder="e.g., text, watermarks, ugly, deformed, blurry..." value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} />
+                    </div>
+                </div>
+            )
+        },
+        {
             id: 'style',
             label: <>🎨 <span className="hidden sm:inline">Style</span></>,
             content: (
@@ -890,9 +1050,8 @@ const App: React.FC = () => {
                     {mainTabs.map(tab => {
                         const Icon = tab.icon;
                         const isActive = mainTab === tab.id;
-                        
                         return (
-                            <button
+                             <button
                                 key={tab.id}
                                 onClick={() => setMainTab(tab.id as any)}
                                 className={`
@@ -916,138 +1075,154 @@ const App: React.FC = () => {
                     })}
                 </nav>
             </div>
-            
+
             <div className="mt-8">
                 {mainTab === 'create' && (
-                     <main className="grid grid-cols-1 lg:grid-cols-3 gap-8 px-4 sm:px-6">
-                        <div className="lg:col-span-2 flex flex-col gap-8">
-                            {generatedImages.length > 0 ? (
-                                <GeneratedImageGrid 
-                                    images={generatedImages} 
-                                    onReset={resetAll}
-                                    onImageClick={handleOpenLightboxFromGrid}
-                                    onUseAsBase={handleUseAsBaseImage}
-                                    onEdit={handleOpenMaskEditor}
-                                    onTweak={handleTweakImage}
-                                    onDownload={handleDownload}
-                                    onToggleFavorite={handleToggleFavorite}
-                                    favoriteIds={favoriteIds}
-                                    onUpscale={handleUpscaleImage}
-                                    upscalingId={upscalingId}
-                                />
-                            ) : (
-                                <div className="flex flex-col flex-grow items-center justify-center bg-panel dark:bg-dark-panel rounded-lg p-8 text-center border-4 border-brand-accent">
-                                    <div>
-                                        <h2 className="text-2xl font-bold">Your batch of 1-4 images will appear here</h2>
-                                        <p className="text-text-secondary dark:text-dark-text-secondary mt-2">Describe a scene or upload an image to get started.</p>
+                    <>
+                        <main className="grid grid-cols-1 lg:grid-cols-3 gap-8 px-4 sm:px-6">
+                            <div 
+                                className="lg:col-span-2 flex flex-col gap-8 relative"
+                                onMouseEnter={() => setIsHoveringImagePanel(true)}
+                                onMouseLeave={() => setIsHoveringImagePanel(false)}
+                            >
+                                {generatedImages.length > 0 ? (
+                                    <GeneratedImageGrid 
+                                        images={generatedImages} 
+                                        onImageClick={handleOpenLightboxFromGrid}
+                                        onUseAsBase={handleUseAsBaseImage}
+                                        onEdit={handleOpenMaskEditor}
+                                        onTweak={handleTweakImage}
+                                        onDownload={handleDownload}
+                                        onToggleFavorite={handleToggleFavorite}
+                                        favoriteIds={favoriteIds}
+                                        onUpscale={handleUpscaleImage}
+                                        upscalingId={upscalingId}
+                                    />
+                                ) : (
+                                    <div className="flex flex-col flex-grow items-center justify-center bg-panel dark:bg-dark-panel rounded-lg p-8 text-center border-4 border-brand-accent">
+                                        <div>
+                                            <h2 className="text-2xl font-bold">Your batch of 1-4 images will appear here</h2>
+                                            <p className="text-text-secondary dark:text-dark-text-secondary mt-2">Describe a scene or upload an image to get started.</p>
+                                        </div>
                                     </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="lg:col-span-1 flex flex-col gap-6 bg-panel dark:bg-dark-panel py-6 rounded-lg px-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-6">
-                                <ImageUploader 
-                                    title="1. Upload Base Image (Optional)" 
-                                    secondaryTitle="The primary subject for your scene"
-                                    id="base-uploader" 
-                                    onFilesSelected={handleBaseImageUpload} 
-                                    onRemove={handleRemoveBaseImage} 
-                                    onEdit={baseImage ? () => handleOpenMaskEditor(baseImage.preview) : undefined}
-                                    images={baseImage ? [baseImage] : []} 
-                                    maskImage={maskImage}
-                                    onClearMask={() => setMaskImage(null)}
-                                    maxFiles={1} 
-                                />
-                                <ImageUploader 
-                                    title="2. Add Reference Images (Optional)"
-                                    id="ref-uploader" 
-                                    onFilesSelected={handleReferenceImageUpload} 
-                                    onRemove={handleRemoveReferenceImage} 
-                                    onRemoveAll={handleRemoveAllReferenceImages}
-                                    images={referenceImages} 
-                                    maxFiles={8} 
-                                    tooltipText="Guide the AI's style, color, and mood. The AI will draw inspiration from these images to create a scene that matches your desired aesthetic."
-                                />
+                                )}
+                                {isResettable && isHoveringImagePanel && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-lg animate-fade-in z-20 pointer-events-none">
+                                        <button
+                                            onClick={resetAll}
+                                            className="bg-brand-accent hover:bg-brand-accent-hover text-white text-xl font-bold py-4 px-8 rounded-lg transition-transform hover:scale-105 pointer-events-auto"
+                                            title="Reset all inputs and clear generated images"
+                                        >
+                                            Start Over
+                                        </button>
+                                    </div>
+                                )}
                             </div>
-                            
-                            <p className="text-sm text-text-secondary dark:text-dark-text-secondary text-center -mt-2 max-w-prose mx-auto">
-                                Guide the AI's style, color, and mood. The AI will draw inspiration from these images to create a scene that matches your desired aesthetic.
-                            </p>
 
-                            <div className="border-t border-border dark:border-dark-border my-2"></div>
-                            <h2 className="text-xl font-semibold">3. Describe Your Scene & Options</h2>
-                            
-                            <Tabs tabs={controlPanelTabs} />
-
-                            <div className="border-t border-border dark:border-dark-border my-2"></div>
-                            
-                            <div className="text-center mb-3">
-                                <h2 className="text-xl font-semibold">4. Generate</h2>
-                                <p className="text-sm text-text-secondary dark:text-dark-text-secondary mt-1 max-w-md mx-auto">
-                                    Use your written prompt to generate images directly. Or, for more creative ideas, generate AI concepts first.
+                            <div className="lg:col-span-1 flex flex-col gap-6 bg-panel dark:bg-dark-panel py-6 rounded-lg px-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-6">
+                                    <ImageUploader 
+                                        title="1. Upload Base Image (Optional)" 
+                                        secondaryTitle="The primary subject for your scene"
+                                        id="base-uploader" 
+                                        onFilesSelected={handleBaseImageUpload} 
+                                        onRemove={handleRemoveBaseImage} 
+                                        onEdit={baseImage ? () => handleOpenMaskEditor(baseImage.preview) : undefined}
+                                        images={baseImage ? [baseImage] : []} 
+                                        maskImage={maskImage}
+                                        onClearMask={() => setMaskImage(null)}
+                                        maxFiles={1} 
+                                    />
+                                    <ImageUploader 
+                                        title="2. Add Reference Images (Optional)"
+                                        id="ref-uploader" 
+                                        onFilesSelected={handleReferenceImageUpload} 
+                                        onRemove={handleRemoveReferenceImage} 
+                                        onRemoveAll={handleRemoveAllReferenceImages}
+                                        images={referenceImages} 
+                                        maxFiles={8} 
+                                        tooltipText="Guide the AI's style, color, and mood. The AI will draw inspiration from these images to create a scene that matches your desired aesthetic."
+                                    />
+                                </div>
+                                
+                                <p className="text-sm text-text-secondary dark:text-dark-text-secondary text-center -mt-2 max-w-prose mx-auto">
+                                    Guide the AI's style, color, and mood. The AI will draw inspiration from these images to create a scene that matches your desired aesthetic.
                                 </p>
-                            </div>
 
-                            {error && <div className="text-red-400 text-sm text-center p-3 rounded-lg mb-4">{error}</div>}
+                                <div className="border-t border-border dark:border-dark-border my-2"></div>
+                                <h2 className="text-xl font-semibold">3. Describe Your Scene & Options</h2>
+                                
+                                <Tabs tabs={controlPanelTabs} />
 
-                            <button
-                                onClick={handleGenerateImages}
-                                disabled={isLoading || (!detailedPrompts && sceneDescription.trim() === '')}
-                                className="w-full bg-brand-accent hover:bg-brand-accent-hover text-white font-bold py-4 px-4 rounded-lg transition duration-300 text-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                            >
-                                <div className="flex items-center justify-center gap-2">
-                                    {isLoading && !loadingMessage.includes('concept') ? (
-                                        <>
-                                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                            </svg>
-                                            {loadingMessage}
-                                        </>
-                                    ) : (
-                                        <>
-                                            <SparklesIcon className="w-6 h-6 text-white" />
-                                            <span>Generate {numImagesToGenerate} Image{numImagesToGenerate > 1 ? 's' : ''}</span>
-                                        </>
-                                    )}
+                                <div className="border-t border-border dark:border-dark-border my-2"></div>
+                                
+                                <div className="text-center mb-3">
+                                    <h2 className="text-xl font-semibold">4. Generate</h2>
+                                    <p className="text-sm text-text-secondary dark:text-dark-text-secondary mt-1 max-w-md mx-auto">
+                                        Use your written prompt to generate images directly. Or, for more creative ideas, generate AI concepts first.
+                                    </p>
                                 </div>
-                            </button>
-                            
-                            <div className="relative flex items-center my-4">
-                                <div className="flex-grow border-t border-border dark:border-dark-border"></div>
-                                <span className="flex-shrink mx-4 text-text-secondary dark:text-dark-text-secondary text-sm">OR</span>
-                                <div className="flex-grow border-t border-border dark:border-dark-border"></div>
-                            </div>
 
-                            <button 
-                                onClick={handleGeneratePrompts}
-                                disabled={isLoading || (!baseImage && !sceneDescription && referenceImages.length === 0)}
-                                className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-4 rounded-lg transition duration-300 text-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                            >
-                                <div className="flex items-center justify-center gap-2">
-                                    {isLoading && loadingMessage.includes('concept') ? (
-                                        <>
-                                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                            </svg>
-                                            {loadingMessage}
-                                        </>
-                                    ) : (
-                                        <>
-                                            <LightbulbIcon className="w-6 h-6" />
-                                            <span>Get AI Creative Concepts (Optional)</span>
-                                        </>
-                                    )}
+                                {error && <div className="text-red-400 text-sm text-center p-3 rounded-lg mb-4">{error}</div>}
+
+                                <button
+                                    onClick={handleGenerateImages}
+                                    disabled={isLoading || (!baseImage && !detailedPrompts && sceneDescription.trim() === '')}
+                                    className="w-full bg-brand-accent hover:bg-brand-accent-hover text-white font-bold py-4 px-4 rounded-lg transition duration-300 text-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                                >
+                                    <div className="flex items-center justify-center gap-2">
+                                        {isLoading && !loadingMessage.includes('concept') ? (
+                                            <>
+                                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                {loadingMessage}
+                                            </>
+                                        ) : (
+                                            <>
+                                                <SparklesIcon className="w-6 h-6 text-white" />
+                                                <span>Generate {numImagesToGenerate} Image{numImagesToGenerate > 1 ? 's' : ''}</span>
+                                            </>
+                                        )}
+                                    </div>
+                                </button>
+                                
+                                <div className="relative flex items-center my-4">
+                                    <div className="flex-grow border-t border-border dark:border-dark-border"></div>
+                                    <span className="flex-shrink mx-4 text-text-secondary dark:text-dark-text-secondary text-sm">OR</span>
+                                    <div className="flex-grow border-t border-border dark:border-dark-border"></div>
                                 </div>
-                            </button>
-                            
-                            <PromptDisplay 
-                                promptData={detailedPrompts}
-                            />
-                        </div>
-                    </main>
+
+                                <button 
+                                    onClick={handleGeneratePrompts}
+                                    disabled={isLoading || (!baseImage && !sceneDescription && referenceImages.length === 0)}
+                                    className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-4 rounded-lg transition duration-300 text-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                                >
+                                    <div className="flex items-center justify-center gap-2">
+                                        {isLoading && loadingMessage.includes('concept') ? (
+                                            <>
+                                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                {loadingMessage}
+                                            </>
+                                        ) : (
+                                            <>
+                                                <LightbulbIcon className="w-6 h-6" />
+                                                <span>Get AI Creative Concepts (Optional)</span>
+                                            </>
+                                        )}
+                                    </div>
+                                </button>
+                                
+                                <PromptDisplay 
+                                    promptData={detailedPrompts}
+                                />
+                            </div>
+                        </main>
+                    </>
                 )}
                 {mainTab === 'history' && (
                      <main className="px-4 sm:px-6">

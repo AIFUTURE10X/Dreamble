@@ -1,6 +1,6 @@
 import React from 'react';
 
-type OptionObject = { value: string; label: string };
+type OptionObject = { value: string; label: string; native?: boolean };
 type OptionGroup = { group: string; options: OptionObject[] };
 type Option = string | OptionObject;
 type Options = Option[] | OptionGroup[];
@@ -30,7 +30,7 @@ export const SelectInput: React.FC<SelectInputProps> = ({ label, options, value,
                     (options as OptionGroup[]).map(group => (
                         <optgroup key={group.group} label={group.group}>
                             {group.options.map(opt => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                <option key={opt.value} value={opt.value}>{opt.native ? `${opt.label} ✨` : opt.label}</option>
                             ))}
                         </optgroup>
                     ))
@@ -40,7 +40,7 @@ export const SelectInput: React.FC<SelectInputProps> = ({ label, options, value,
                             return <option key={option as string} value={option as string}>{option as string}</option>;
                         }
                         const opt = option as OptionObject;
-                        return <option key={opt.value} value={opt.value}>{opt.label}</option>;
+                        return <option key={opt.value} value={opt.value}>{opt.native ? `${opt.label} ✨` : opt.label}</option>;
                     })
                 )}
             </select>
